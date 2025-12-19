@@ -26,6 +26,10 @@ find_package(${NAMESPACE}Plugins REQUIRED)
 # L2 test execution is disabled in CI via RDK_SERVICE_L2_TEST=OFF.
 # This CMakeLists.txt is retained for repository structure consistency.
 
+if(PLUGIN_DEVICEINFO)
+    set(SRC_FILES ${SRC_FILES} tests/DeviceInfo_L2Test.cpp)
+endif()
+
 add_library(${MODULE_NAME} SHARED ${SRC_FILES})
 
 set_target_properties(${MODULE_NAME} PROPERTIES

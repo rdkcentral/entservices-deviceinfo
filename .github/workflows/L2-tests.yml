@@ -365,6 +365,7 @@ jobs:
           -Wall -Wno-unused-result -Wno-deprecated-declarations -Wno-error=format=
           -Wl,-wrap,system -Wl,-wrap,popen -Wl,-wrap,syslog -Wl,-wrap,v_secure_system -Wl,-wrap,v_secure_popen -Wl,-wrap,v_secure_pclose -Wl,-wrap,unlink
           -DUSE_IARMBUS
+          -DUSE_DEVICESETTINGS
           -DENABLE_ERM
           -DRDK_LOG_MILESTONE
           -DRDK_SERVICE_L2_TEST
@@ -382,8 +383,9 @@ jobs:
           -DPLUGIN_DEVICEINFO=ON
           -DUSE_THUNDER_R4=ON
           -DPLUGIN_L2Tests=ON
-          -DRDK_SERVICE_L2_TEST=${{env.RDK_SERVICE_L2_TEST}}
+          -DRDK_SERVICE_L2_TEST=ON
           -DDS_FOUND=ON
+          -DUSE_DEVICESETTINGS=ON
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
           &&
           cmake --build build/entservices-deviceinfo
@@ -442,6 +444,7 @@ jobs:
           -Werror -Wall -Wno-unused-result -Wno-deprecated-declarations -Wno-error=format=
           -Wl,--no-as-needed
           -DUSE_IARMBUS
+          -DUSE_DEVICESETTINGS
           -DENABLE_ERM
           -DRDK_LOG_MILESTONE
           -DRDK_SERVICE_L2_TEST
@@ -459,8 +462,9 @@ jobs:
           -DPLUGIN_DEVICEINFO=ON
           -DUSE_THUNDER_R4=ON
           -DPLUGIN_L2Tests=ON
-          -DRDK_SERVICE_L2_TEST=${{env.RDK_SERVICE_L2_TEST}}
+          -DRDK_SERVICE_L2_TEST=ON
           -DDS_FOUND=ON
+          -DUSE_DEVICESETTINGS=ON
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
           -DPLUGIN_ANALYTICS_SIFT_BACKEND=ON
           -DPLUGIN_ANALYTICS_SIFT_2_0_ENABLED="true"
