@@ -19,7 +19,7 @@
 
 #include <gtest/gtest.h>
 
-#include "Implementation/DeviceVideoCapabilities.h"
+#include "DeviceVideoCapabilities.h"
 
 #include "HostMock.h"
 #include "IarmBusMock.h"
