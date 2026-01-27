@@ -22,6 +22,12 @@ set(THUNDER_PORT 9998)
 
 find_package(${NAMESPACE}Plugins REQUIRED)
 
+# DeviceInfo L2 Test - restored, was accidentally removed during cleanup
+if(PLUGIN_DEVICEINFO)
+    set(SRC_FILES ${SRC_FILES} tests/DeviceInfo_L2Test.cpp)
+endif()
+
+# Removed plugins - these tests were deleted during repository cleanup
 if(PLUGIN_SYSTEMMODE)
     set(SRC_FILES ${SRC_FILES} tests/SystemMode_L2Test.cpp)
 endif()
