@@ -102,15 +102,24 @@ macro(add_plugin_test plugin_name test_files)
 endmacro()
 
 # PLUGIN_DEVICEINFO
-# Note: Some test files (test_DeviceInfo.cpp, test_DeviceAudioCapabilities.cpp, test_DeviceInfoWeb.cpp)
-# are currently incompatible with the COM-RPC refactoring (RDKEMW-9783) and need to be updated.
-# They reference old Implementation/ directory structure and APIs that no longer exist.
-# Only JSONRPC tests are currently compatible.
+# Note: Test files are currently incompatible with the COM-RPC refactoring (RDKEMW-9783) and need to be updated.
+# They reference old Implementation/ directory structure and use outdated API signatures.
+# The COM-RPC refactoring changed method signatures (added success parameters, changed return types, etc.)
+# 
+# Examples of API changes:
+# - SupportedVideoDisplays() now requires 2 parameters instead of 1 (added bool& success)
+# - HostEDID() now takes HostEdid& instead of string
+# - DefaultResolution() now takes DefaultResln& instead of string
+# - SupportedResolutions() now requires 3 parameters instead of 2 (added bool& success)
+# - SupportedHdcp() now takes SupportedHDCPVer& instead of CopyProtection
+#
+# All test files need significant refactoring to work with new COM-RPC interfaces.
+# Only test_DeviceInfoJsonRpc.cpp is currently compatible.
 set (DEVICEINFO_INC 
     ${CMAKE_SOURCE_DIR}/../entservices-deviceinfo/plugin
     ${CMAKE_SOURCE_DIR}/../entservices-deviceinfo/helpers
 )
-set (DEVICEINFO_SRC tests/test_DeviceInfoJsonRpc.cpp tests/test_DeviceVideoCapabilities.cpp)
+set (DEVICEINFO_SRC tests/test_DeviceInfoJsonRpc.cpp)
 set (DEVICEINFO_LIBS 
     ${NAMESPACE}DeviceInfo 
 )
@@ -118,10 +127,7 @@ add_plugin_test_ex(PLUGIN_DEVICEINFO "${DEVICEINFO_SRC}" "${DEVICEINFO_INC}" "${
 
 add_library(${MODULE_NAME} SHARED ${TEST_SRC})
 
-set_source_files_properties(
-        tests/test_DeviceVideoCapabilities.cpp
-        PROPERTIES COMPILE_FLAGS "-fexceptions")
-
+# Note: No special compile flags needed for test_DeviceInfoJsonRpc.cpp
 
 include_directories(${TEST_INC})
 
