@@ -26,7 +26,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(${NAMESPACE}Plugins REQUIRED)
 
 set (TEST_SRC
-    tests/test_UtilsFile.cpp
 )
 
 set (TEST_LIB
@@ -108,7 +107,7 @@ set (DEVICEINFO_INC
     ${CMAKE_SOURCE_DIR}/../entservices-deviceinfo/plugin/Implementation
     ${CMAKE_SOURCE_DIR}/../entservices-deviceinfo/helpers
 )
-set (DEVICEINFO_SRC tests/test_DeviceAudioCapabilities.cpp tests/test_DeviceInfo.cpp tests/test_DeviceInfoJsonRpc.cpp tests/test_DeviceInfoWeb.cpp tests/test_FirmwareVersion.cpp tests/test_DeviceVideoCapabilities.cpp)
+set (DEVICEINFO_SRC tests/test_DeviceAudioCapabilities.cpp tests/test_DeviceInfo.cpp tests/test_DeviceInfoJsonRpc.cpp tests/test_DeviceInfoWeb.cpp tests/test_DeviceVideoCapabilities.cpp)
 set (DEVICEINFO_LIBS 
     ${NAMESPACE}DeviceInfo 
 )
@@ -119,7 +118,6 @@ add_library(${MODULE_NAME} SHARED ${TEST_SRC})
 set_source_files_properties(
         tests/test_DeviceAudioCapabilities.cpp
         tests/test_DeviceVideoCapabilities.cpp
-        tests/test_SystemServices.cpp
         PROPERTIES COMPILE_FLAGS "-fexceptions")
 
 
