@@ -108,18 +108,18 @@ jobs:
           ref: develop
           token: ${{ secrets.RDKCM_RDKE }}
 
-      - name: Checkout entservices-deviceanddisplay
+      - name: Checkout entservices-deviceinfo
         if: ${{ inputs.caller_source == 'local' }}
         uses: actions/checkout@v3
         with:
-          path: entservices-deviceanddisplay
+          path: entservices-deviceinfo
 
-      - name: Checkout entservices-deviceanddisplay-testframework
+      - name: Checkout entservices-deviceinfo-testframework
         if: ${{ inputs.caller_source == 'testframework' }}
         uses: actions/checkout@v3
         with:
-          repository: rdkcentral/entservices-deviceanddisplay
-          path: entservices-deviceanddisplay
+          repository: rdkcentral/entservices-deviceinfo
+          path: entservices-deviceinfo
           ref: develop
 
       - name: Apply patches ThunderTools
@@ -322,11 +322,11 @@ jobs:
           &&
           cmake --install build/mocks
 
-      - name: Build entservices-deviceanddisplay
+      - name: Build entservices-deviceinfo
         run: >
           cmake
-          -S "$GITHUB_WORKSPACE/entservices-deviceanddisplay"
-          -B build/entservices-deviceanddisplay
+          -S "$GITHUB_WORKSPACE/entservices-deviceinfo"
+          -B build/entservices-deviceinfo
           -DCMAKE_TOOLCHAIN_FILE="${{ env.TOOLCHAIN_FILE }}"
           -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr"
           -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake"
@@ -350,7 +350,7 @@ jobs:
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/systemservices
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/systemservices/proc
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks
-          -I $GITHUB_WORKSPACE/entservices-deviceanddisplay/helpers
+          -I $GITHUB_WORKSPACE/entservices-deviceinfo/helpers
           -I $GITHUB_WORKSPACE/install/usr/include
           -I ./usr/include/libdrm
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/devicesettings.h
@@ -386,8 +386,7 @@ jobs:
           -DCMAKE_DISABLE_FIND_PACKAGE_Udev=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RBus=ON
-          -DPLUGIN_POWERMANAGER=ON
-          -DPLUGIN_POWERMANAGER_MODE="Local"
+          -DPLUGIN_DEVICEINFO=ON
           -DUSE_THUNDER_R4=ON
           -DPLUGIN_L2Tests=ON
           -DRDK_SERVICE_L2_TEST=ON
@@ -395,9 +394,9 @@ jobs:
           -DDS_FOUND=ON
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
           &&
-          cmake --build build/entservices-deviceanddisplay
+          cmake --build build/entservices-deviceinfo
           &&
-          cmake --install build/entservices-deviceanddisplay
+          cmake --install build/entservices-deviceinfo
 
       - name: Build entservices-testframework
         run: >
@@ -426,7 +425,7 @@ jobs:
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/iarmmgrs-hal
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/systemservices
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/systemservices/proc
-          -I $GITHUB_WORKSPACE/entservices-deviceanddisplay/helpers
+          -I $GITHUB_WORKSPACE/entservices-deviceinfo/helpers
           -I $GITHUB_WORKSPACE/install/usr/include
           -I ./usr/include/libdrm
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/devicesettings.h
@@ -461,8 +460,7 @@ jobs:
           -DCMAKE_DISABLE_FIND_PACKAGE_Udev=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RBus=ON
-          -DPLUGIN_POWERMANAGER=ON
-          -DPLUGIN_POWERMANAGER_MODE="Local"
+          -DPLUGIN_DEVICEINFO=ON
           -DUSE_THUNDER_R4=ON
           -DPLUGIN_L2Tests=ON
           -DRDK_SERVICE_L2_TEST=ON
@@ -609,7 +607,7 @@ jobs:
           -r coverage.info
           '/usr/include/*'
           '*/build/entservices-infra/_deps/*'
-          '*/build/entservices-deviceanddisplay/_deps/*'
+          '*/build/entservices-deviceinfo/_deps/*'
           '*/build/entservices-entservices-testframework/_deps/*'
           '*/install/usr/include/*'
           '*/Tests/headers/*'
@@ -629,7 +627,7 @@ jobs:
         if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-L2-oop-deviceanddisplay
+          name: artifacts-L2-oop-deviceinfo
           path: |
             coverage/
             valgrind_log
