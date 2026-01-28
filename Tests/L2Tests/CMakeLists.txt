@@ -22,12 +22,11 @@ set(THUNDER_PORT 9998)
 
 find_package(${NAMESPACE}Plugins REQUIRED)
 
-if(SRC_FILES)
-    add_library(${MODULE_NAME} SHARED ${SRC_FILES})
-else()
-    message(STATUS "No L2 test sources defined, skipping ${MODULE_NAME} build")
-    return()
-endif()
+# Note: DeviceInfo does not have L2 tests in this repository.
+# L2 test execution is disabled in CI via RDK_SERVICE_L2_TEST=OFF.
+# This CMakeLists.txt is retained for repository structure consistency.
+
+add_library(${MODULE_NAME} SHARED ${SRC_FILES})
 
 set_target_properties(${MODULE_NAME} PROPERTIES
         CXX_STANDARD 14
@@ -66,7 +65,6 @@ target_include_directories(
     ../../../entservices-testframework/Tests/mocks/thunder
     ../../../entservices-testframework/Tests/mocks/devicesettings
     ../../../entservices-testframework/Tests/mocks/MockPlugin
-    ../../../entservices-testframework/Tests/headers
     ../../../entservices-testframework/Tests/L2Tests/L2TestsPlugin
     ${CMAKE_INSTALL_PREFIX}/include
     )
