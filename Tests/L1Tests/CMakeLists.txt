@@ -121,7 +121,8 @@ set (DEVICEINFO_INC
 )
 set (DEVICEINFO_SRC tests/test_DeviceInfoJsonRpc.cpp)
 set (DEVICEINFO_LIBS 
-    ${NAMESPACE}DeviceInfo 
+    ${NAMESPACE}DeviceInfo
+    ${NAMESPACE}DeviceInfoImplementation
 )
 add_plugin_test_ex(PLUGIN_DEVICEINFO "${DEVICEINFO_SRC}" "${DEVICEINFO_INC}" "${DEVICEINFO_LIBS}")
 
