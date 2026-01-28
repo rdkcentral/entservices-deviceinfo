@@ -22,12 +22,12 @@ set(THUNDER_PORT 9998)
 
 find_package(${NAMESPACE}Plugins REQUIRED)
 
-# DeviceInfo L2 Test
-if(PLUGIN_DEVICEINFO)
-    set(SRC_FILES ${SRC_FILES} tests/DeviceInfo_L2Test.cpp)
+if(SRC_FILES)
+    add_library(${MODULE_NAME} SHARED ${SRC_FILES})
+else()
+    message(STATUS "No L2 test sources defined, skipping ${MODULE_NAME} build")
+    return()
 endif()
-
-add_library(${MODULE_NAME} SHARED ${SRC_FILES})
 
 set_target_properties(${MODULE_NAME} PROPERTIES
         CXX_STANDARD 14
