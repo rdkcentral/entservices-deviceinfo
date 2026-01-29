@@ -19,7 +19,7 @@
 
 #include <gtest/gtest.h>
 
-#include "Implementation/DeviceInfo.h"
+#include "DeviceInfoImplementation.h"
 
 #include "IarmBusMock.h"
 

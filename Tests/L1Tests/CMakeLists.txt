@@ -135,7 +135,6 @@ target_include_directories(${MODULE_NAME}
         ${CMAKE_SOURCE_DIR}/../entservices-testframework/Tests/mocks
         ${CMAKE_SOURCE_DIR}/../entservices-testframework/Tests/mocks/devicesettings
         ${CMAKE_SOURCE_DIR}/../entservices-testframework/Tests/mocks/thunder
-        ${CMAKE_SOURCE_DIR}/../entservices-testframework/Tests/headers
         ${CMAKE_SOURCE_DIR}/../Thunder/Source/plugins
         )
 
