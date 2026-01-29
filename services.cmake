@@ -21,8 +21,28 @@
 
 add_definitions (-DUSE_TR_69)
 
+add_definitions (-DHAS_API_SYSTEM)
+
 option(PLUGIN_TELEMETRY "PLUGIN_TELEMETRY" ON)
+
+add_definitions (-DPLUGIN_CONTINUEWATCHING)
 option(PLUGIN_CONTINUEWATCHING "PLUGIN_CONTINUEWATCHING" ON)
+
+if(PLUGIN_CONTINUEWATCHING)
+    if(CONTINUEWATCHING_DISABLE_SECAPI)
+        add_definitions (-DDISABLE_SECAPI)
+    endif()
+endif()
+
+if (BUILD_ENABLE_TELEMETRY_LOGGING)
+    message("Building with telemetry logging")
+    add_definitions (-DENABLE_TELEMETRY_LOGGING)
+endif()
+
+if (ENABLE_RFC_MANAGER)
+    message("Using binary for RFC Maintenance task")
+    add_definitions (-DENABLE_RFC_MANAGER=ON)
+endif()
 
 if (BUILD_ENABLE_DEVICE_MANUFACTURER_INFO)
     message("Building with device manufacturer info")

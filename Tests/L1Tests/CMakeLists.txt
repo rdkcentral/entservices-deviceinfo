@@ -104,9 +104,8 @@ endmacro()
 
 #PLUGIN_DEVICEINFO
 set (DEVICEINFO_INC 
-    ${CMAKE_SOURCE_DIR}/../entservices-deviceanddisplay/DeviceInfo
-    ${CMAKE_SOURCE_DIR}/../entservices-deviceanddisplay/DeviceInfo/Implementation
-    ${CMAKE_SOURCE_DIR}/../entservices-deviceanddisplay/helpers
+    ${CMAKE_SOURCE_DIR}/plugin
+    ${CMAKE_SOURCE_DIR}/helpers
 )
 set (DEVICEINFO_LIBS 
     ${NAMESPACE}DeviceInfo
@@ -131,7 +130,6 @@ target_include_directories(${MODULE_NAME}
         ${CMAKE_SOURCE_DIR}/../entservices-testframework/Tests/mocks
         ${CMAKE_SOURCE_DIR}/../entservices-testframework/Tests/mocks/devicesettings
         ${CMAKE_SOURCE_DIR}/../entservices-testframework/Tests/mocks/thunder
-        ${CMAKE_SOURCE_DIR}/../entservices-testframework/Tests/headers
         ${CMAKE_SOURCE_DIR}/../Thunder/Source/plugins
         )
 
