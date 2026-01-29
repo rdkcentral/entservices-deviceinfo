@@ -104,8 +104,8 @@ endmacro()
 
 #PLUGIN_DEVICEINFO
 set (DEVICEINFO_INC 
-    ${CMAKE_SOURCE_DIR}/../plugin
-    ${CMAKE_SOURCE_DIR}/../helpers
+    ${CMAKE_SOURCE_DIR}/../entservices-deviceinfo/plugin
+    ${CMAKE_SOURCE_DIR}/../entservices-deviceinfo/helpers
 )
 set (DEVICEINFO_LIBS 
     ${NAMESPACE}DeviceInfo 
