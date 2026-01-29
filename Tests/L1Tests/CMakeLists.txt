@@ -103,17 +103,12 @@ macro(add_plugin_test plugin_name test_files)
 endmacro()
 
 #PLUGIN_DEVICEINFO
-set (DEVICEINFO_SRC
-    tests/test_DeviceInfo.cpp
-    tests/test_DeviceInfoJsonRpc.cpp
-    tests/test_DeviceInfoWeb.cpp
-)
 set (DEVICEINFO_INC 
-    ${CMAKE_SOURCE_DIR}/plugin
-    ${CMAKE_SOURCE_DIR}/helpers
+    ${CMAKE_SOURCE_DIR}/../plugin
+    ${CMAKE_SOURCE_DIR}/../helpers
 )
 set (DEVICEINFO_LIBS 
-    ${NAMESPACE}DeviceInfo
+    ${NAMESPACE}DeviceInfo 
  
 )
 add_plugin_test_ex(PLUGIN_DEVICEINFO "${DEVICEINFO_SRC}" "${DEVICEINFO_INC}" "${DEVICEINFO_LIBS}")
