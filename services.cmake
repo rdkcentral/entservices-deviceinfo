@@ -19,14 +19,24 @@
 # features
 #
 
+add_definitions (-DUSE_IARM)
+option(USE_IARM "USE_IARM" ON)
+
+add_definitions (-DUSE_IARM_BUS)
+option(USE_IARM_BUS "USE_IARM_BUS" ON)
+
+add_definitions (-DUSE_IARMBUS)
+
 add_definitions (-DUSE_TR_69)
 
 add_definitions (-DHAS_API_SYSTEM)
 
-option(PLUGIN_TELEMETRY "PLUGIN_TELEMETRY" ON)
 
-add_definitions (-DPLUGIN_CONTINUEWATCHING)
+add_definitions (-DUSE_DS)
+
+option(PLUGIN_TELEMETRY "PLUGIN_TELEMETRY" ON)
 option(PLUGIN_CONTINUEWATCHING "PLUGIN_CONTINUEWATCHING" ON)
+
 
 if(PLUGIN_CONTINUEWATCHING)
     if(CONTINUEWATCHING_DISABLE_SECAPI)
@@ -34,9 +44,33 @@ if(PLUGIN_CONTINUEWATCHING)
     endif()
 endif()
 
+
+if (BUILD_DBUS)
+    message("Building for DBUS")
+
+    add_definitions (-DBUILD_DBUS)
+    option(BUILD_DBUS "BUILD_DBUS" ON)
+    add_definitions (-DIARM_USE_DBUS)
+    option(IARM_USE_DBUS "IARM_USE_DBUS" ON)
+endif()
+
+if (BUILD_ENABLE_DEVICE_MANUFACTURER_INFO)
+    message("Building with device manufacturer info")
+    add_definitions (-DENABLE_DEVICE_MANUFACTURER_INFO)
+endif()
+
+if (SUPPRESS_MAINTENANCE)
+    message("Enable SUPPRESS_MAINTENANCE")
+    add_definitions (-DSUPPRESS_MAINTENANCE)
+endif()
+
 if (BUILD_ENABLE_TELEMETRY_LOGGING)
     message("Building with telemetry logging")
     add_definitions (-DENABLE_TELEMETRY_LOGGING)
+endif()
+
+if(NET_DISABLE_NETSRVMGR_CHECK)
+    add_definitions (-DNET_DISABLE_NETSRVMGR_CHECK)
 endif()
 
 if (ENABLE_RFC_MANAGER)
@@ -44,7 +78,3 @@ if (ENABLE_RFC_MANAGER)
     add_definitions (-DENABLE_RFC_MANAGER=ON)
 endif()
 
-if (BUILD_ENABLE_DEVICE_MANUFACTURER_INFO)
-    message("Building with device manufacturer info")
-    add_definitions (-DENABLE_DEVICE_MANUFACTURER_INFO)
-endif()
