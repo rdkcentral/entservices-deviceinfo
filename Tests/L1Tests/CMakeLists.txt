@@ -107,8 +107,7 @@ set (DEVICEINFO_INC
     ${CMAKE_SOURCE_DIR}/../entservices-deviceinfo/plugin
     ${CMAKE_SOURCE_DIR}/../entservices-deviceinfo/helpers
 )
-set (DEVICEINFO_LIBS ${NAMESPACE}DeviceInfo ${NAMESPACE}DeviceInfoImplementation) 
-)
+set (DEVICEINFO_LIBS ${NAMESPACE}DeviceInfo ${NAMESPACE}DeviceInfoImplementation)
 add_plugin_test_ex(PLUGIN_DEVICEINFO "${DEVICEINFO_SRC}" "${DEVICEINFO_INC}" "${DEVICEINFO_LIBS}")
 add_plugin_test_ex(PLUGIN_DEVICEINFO "tests/test_DeviceInfo.cpp;tests/test_DeviceAudioCapabilities.cpp;tests/test_DeviceVideoCapabilities.cpp" "${DEVICEINFO_INC}" "${DEVICEINFO_LIBS}")
 
