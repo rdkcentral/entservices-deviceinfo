@@ -101,7 +101,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-deviceinfo
           path: entservices-deviceinfo
-          ref: develop
+          ref: feature/RDKEMW-12872
 
       - name: Checkout entservices-testframework
         uses: actions/checkout@v3
