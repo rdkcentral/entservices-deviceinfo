@@ -110,6 +110,7 @@ namespace Plugin {
     DeviceInfoImplementation::~DeviceInfoImplementation()
     {
         LOGINFO("DeviceInfoImplementation destructor");
+        printf("Test coverity flow: %s\n");
         if (_service != nullptr)
         {
             _service->Release();
