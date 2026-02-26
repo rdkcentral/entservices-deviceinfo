@@ -1378,10 +1378,7 @@ TEST_F(DeviceInfoTest, EthMac_Success)
                 EXPECT_EQ(string(strFmt), string("/lib/rdk/getDeviceDetails.sh read eth_mac"));
 
                 const char mac[] = "AA:BB:CC:DD:EE:FF\n";
-                char buffer[256];
-                memset(buffer, 0, sizeof(buffer));
-                strncpy(buffer, mac, sizeof(buffer) - 1);
-                FILE* pipe = fmemopen(buffer, strlen(buffer), "r");
+                FILE* pipe = fmemopen((void*)mac, sizeof(mac) - 1, "r");
                 return pipe;
             }));
 

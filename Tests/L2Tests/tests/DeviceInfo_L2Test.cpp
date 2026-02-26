@@ -1531,11 +1531,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_MacAddressesAndIp)
                 }
                 
                 if (valueToReturn != nullptr) {
-                    char buffer[1024];
-                    memset(buffer, 0, sizeof(buffer));
-                    strncpy(buffer, valueToReturn, sizeof(buffer) - 1);
-                    FILE* pipe = fmemopen(buffer, strlen(buffer), "r");
-                    return pipe;
+                    return fmemopen(strdup(valueToReturn), strlen(valueToReturn), "r");
                 }
                 
                 return nullptr;
@@ -2058,11 +2054,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_MacAddressesAndIp)
                 }
                 
                 if (valueToReturn != nullptr) {
-                    char buffer[1024];
-                    memset(buffer, 0, sizeof(buffer));
-                    strncpy(buffer, valueToReturn, sizeof(buffer) - 1);
-                    FILE* pipe = fmemopen(buffer, strlen(buffer), "r");
-                    return pipe;
+                    return fmemopen(strdup(valueToReturn), strlen(valueToReturn), "r");
                 }
                 
                 return nullptr;
