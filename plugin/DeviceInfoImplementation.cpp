@@ -17,6 +17,7 @@
 * limitations under the License.
 **/
 
+
 #include "DeviceInfoImplementation.h"
 
 #include "mfrMgr.h"
