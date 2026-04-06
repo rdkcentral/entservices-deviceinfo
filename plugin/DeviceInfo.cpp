@@ -121,6 +121,8 @@ namespace WPEFramework
         if (nullptr != _deviceInfo && nullptr != _deviceAudioCapabilities && nullptr != _deviceVideoCapabilities)
         {
             Exchange::JDeviceAudioCapabilities::Unregister(*this);
+            //Added for Crash
+            _deviceAudioCapabilities = nullptr;
             _deviceAudioCapabilities->Release();
             _deviceAudioCapabilities = nullptr;
 
