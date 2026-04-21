@@ -242,7 +242,7 @@ namespace Plugin {
             else
             {
                 deviceReleaseVer.releaseversion = std::move(defaultVersion);
-                LOGERR("Unable to get releaseVersion of the Image:%s.So default releaseVersion is: %s ",imagename.c_str(),deviceReleaseVer.releaseversion.c_str());
+                LOGERR("Unable to get releaseVersion of the Image:%s.So default releaseVersion is: %s ",deviceReleaseVer.releaseversion.c_str());
             }
         }
         else
