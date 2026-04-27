@@ -5,11 +5,15 @@ on:
     # Runs at 00:00 UTC daily = 05:30 AM IST (UTC+5:30)
     - cron: '0 0 * * *'
   workflow_dispatch:  # Allows manual trigger for testing
+  pull_request:
+    types: [closed]   # Fires when a PR is closed; job condition below filters for merges only
 
 jobs:
   merged-pr-report:
     name: Fetch Latest Merged PR and Send Email Report
     runs-on: ubuntu-latest
+    # For pull_request events: only run when the PR was actually merged, not just closed
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
 
     steps:
       - name: Checkout repository
