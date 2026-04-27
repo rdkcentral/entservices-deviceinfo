@@ -2,7 +2,7 @@ name: Daily Workflow Status Report
 
 on:
   schedule:
-    - cron: '0 8 * * *'   # Every day at 8:00 AM UTC — adjust to your timezone
+    - cron: '15 11 * * *'  # Every day at 16:45 IST (11:15 UTC)
   workflow_dispatch:        # Allows manual trigger from the Actions tab
 
 jobs:
