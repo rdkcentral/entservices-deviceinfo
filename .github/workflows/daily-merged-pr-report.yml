@@ -37,7 +37,7 @@ jobs:
           PR_URL=$(echo "$PR_JSON"    | jq -r '.[0].url // "N/A"')
           PR_BASE=$(echo "$PR_JSON"   | jq -r '.[0].baseRefName // "N/A"')
           PR_HEAD=$(echo "$PR_JSON"   | jq -r '.[0].headRefName // "N/A"')
-          PR_LABELS=$(echo "$PR_JSON" | jq -r '[.[0].labels[].name] | join(", ") // "None"')
+          PR_LABELS=$(echo "$PR_JSON" | jq -r 'if (.[0].labels | length) > 0 then [.[0].labels[].name] | join(", ") else "None" end')
           PR_BODY=$(echo "$PR_JSON"   | jq -r '.[0].body // "No description provided."')
 
           # Truncate body to 2000 chars to keep email manageable
@@ -61,39 +61,34 @@ jobs:
       - name: Build email body
         id: build_email
         run: |
-          REPORT_DATE=$(date -u '+%Y-%m-%d %H:%M UTC  (%Z)')
+          REPORT_DATE=$(date -u '+%Y-%m-%d %H:%M UTC')
           REPO_NAME="${{ github.repository }}"
 
-          EMAIL_BODY=$(cat <<EMAIL
-          Daily Merged PR Report — ${REPO_NAME}
-          =========================================
-          Report generated : ${REPORT_DATE}
-          Repository        : https://github.com/${REPO_NAME}
-
-          -----------------------------------------
-          LATEST MERGED PULL REQUEST
-          -----------------------------------------
-          PR Number  : #${PR_NUMBER}
-          Title      : ${PR_TITLE}
-          Author     : ${PR_AUTHOR}
-          Merged At  : ${PR_MERGED}
-          Base Branch: ${PR_BASE}
-          Head Branch: ${PR_HEAD}
-          Labels     : ${PR_LABELS}
-          URL        : ${PR_URL}
-
-          Description:
-          ${PR_BODY}
-          -----------------------------------------
-          This is an automated report. Do not reply to this email.
-          EMAIL
-          )
-
-          # Store multi-line var safely
+          # Write email body directly into GITHUB_ENV (avoids heredoc indentation issues in YAML)
           {
-            echo "EMAIL_BODY<<EOF"
-            echo "$EMAIL_BODY"
-            echo "EOF"
+            echo "EMAIL_BODY<<BODY_EOF"
+            echo "Daily Merged PR Report — ${REPO_NAME}"
+            echo "========================================="
+            echo "Report generated : ${REPORT_DATE}"
+            echo "Repository        : https://github.com/${REPO_NAME}"
+            echo ""
+            echo "-----------------------------------------"
+            echo "LATEST MERGED PULL REQUEST"
+            echo "-----------------------------------------"
+            echo "PR Number  : #${PR_NUMBER}"
+            echo "Title      : ${PR_TITLE}"
+            echo "Author     : ${PR_AUTHOR}"
+            echo "Merged At  : ${PR_MERGED}"
+            echo "Base Branch: ${PR_BASE}"
+            echo "Head Branch: ${PR_HEAD}"
+            echo "Labels     : ${PR_LABELS}"
+            echo "URL        : ${PR_URL}"
+            echo ""
+            echo "Description:"
+            echo "${PR_BODY}"
+            echo "-----------------------------------------"
+            echo "This is an automated report. Do not reply to this email."
+            echo "BODY_EOF"
           } >> "$GITHUB_ENV"
 
           echo "subject=Daily Merged PR Report — $REPO_NAME [$(date +'%Y-%m-%d')]" >> "$GITHUB_OUTPUT"
