@@ -1,0 +1,83 @@
+name: Daily Workflow Status Report
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # Every day at 8:00 AM UTC — adjust to your timezone
+  workflow_dispatch:        # Allows manual trigger from the Actions tab
+
+jobs:
+  status-report:
+    name: Check all workflow run statuses
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      issues: write        # Needed to open GitHub Issues for failures
+
+    steps:
+      - name: Fetch recent workflow runs
+        id: fetch_runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "### Workflow Status Report - $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          ALL_RUNS=$(gh run list \
+            --repo ${{ github.repository }} \
+            --limit 50 \
+            --json name,status,conclusion,createdAt,url)
+
+          FAILURES=$(echo "$ALL_RUNS" | jq '[.[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")]')
+          TOTAL=$(echo "$ALL_RUNS" | jq 'length')
+          FAIL_COUNT=$(echo "$FAILURES" | jq 'length')
+
+          echo "**Total recent runs checked:** $TOTAL" >> $GITHUB_STEP_SUMMARY
+          echo "**Failed / Cancelled / Timed-out:** $FAIL_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$FAIL_COUNT" -gt 0 ]; then
+            echo "#### Failed Workflows" >> $GITHUB_STEP_SUMMARY
+            echo "| Workflow | Conclusion | Date | Link |" >> $GITHUB_STEP_SUMMARY
+            echo "|---|---|---|---|" >> $GITHUB_STEP_SUMMARY
+            echo "$FAILURES" | jq -r '.[] | "| \(.name) | \(.conclusion) | \(.createdAt) | [\(.url)](\(.url)) |"' >> $GITHUB_STEP_SUMMARY
+            echo "FAILURES_FOUND=true" >> $GITHUB_ENV
+            echo "FAIL_COUNT=$FAIL_COUNT" >> $GITHUB_ENV
+          else
+            echo ":white_check_mark: All workflows passed successfully." >> $GITHUB_STEP_SUMMARY
+            echo "FAILURES_FOUND=false" >> $GITHUB_ENV
+          fi
+
+      - name: Open a GitHub Issue for failures
+        if: env.FAILURES_FOUND == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh issue list \
+            --repo ${{ github.repository }} \
+            --label "workflow-failure" \
+            --state open \
+            --json number \
+            | jq 'length')
+
+          if [ "$EXISTING" -eq 0 ]; then
+            gh issue create \
+              --repo ${{ github.repository }} \
+              --title "Daily Report: ${{ env.FAIL_COUNT }} workflow failure(s) detected on $(date -u '+%Y-%m-%d')" \
+              --body "Automated daily check found failed/cancelled workflow runs. Check the [Actions tab](https://github.com/${{ github.repository }}/actions) for details." \
+              --label "workflow-failure"
+          else
+            echo "An open issue already exists for workflow failures. Skipping creation."
+          fi
+
+      - name: Send Slack notification on failures
+        if: env.FAILURES_FOUND == 'true' && env.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": ":red_circle: *Daily Workflow Report* — ${{ env.FAIL_COUNT }} failure(s) detected in `${{ github.repository }}`.\nCheck: https://github.com/${{ github.repository }}/actions"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
