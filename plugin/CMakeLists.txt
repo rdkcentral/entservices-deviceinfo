@@ -25,6 +25,7 @@ set(PLUGIN_DEVICEINFO_STARTUPORDER "" CACHE STRING "Start-up order for DeviceInf
 find_package(${NAMESPACE}Plugins REQUIRED)
 find_package(${NAMESPACE}Definitions REQUIRED)
 find_package(CompileSettingsDebug CONFIG REQUIRED)
+find_package(${NAMESPACE}Helpers REQUIRED)
 find_package(RFC)
 find_package(DS)
 find_package(IARMBus)
@@ -37,14 +38,12 @@ set_target_properties(${MODULE_NAME} PROPERTIES
         CXX_STANDARD 11
         CXX_STANDARD_REQUIRED YES)
 
-include_directories(
-        ../helpers)
-
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         CompileSettingsDebug::CompileSettingsDebug
         ${NAMESPACE}Plugins::${NAMESPACE}Plugins
-        ${NAMESPACE}Definitions::${NAMESPACE}Definitions)
+        ${NAMESPACE}Definitions::${NAMESPACE}Definitions
+        ${NAMESPACE}::${NAMESPACE}Helpers)
 
 install(TARGETS ${MODULE_NAME}
     DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/${STORAGE_DIRECTORY}/plugins)
@@ -58,8 +57,7 @@ add_library(${PLUGIN_IMPLEMENTATION} SHARED
 target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE
         ${RFC_INCLUDE_DIRS}
         ${DS_INCLUDE_DIRS}
-        ${IARMBUS_INCLUDE_DIRS}
-        ../helpers)
+        ${IARMBUS_INCLUDE_DIRS})
 
 set_target_properties(${PLUGIN_IMPLEMENTATION} PROPERTIES
         CXX_STANDARD 11
@@ -76,6 +74,7 @@ target_link_libraries(${PLUGIN_IMPLEMENTATION}
         CompileSettingsDebug::CompileSettingsDebug
         ${NAMESPACE}Plugins::${NAMESPACE}Plugins
         ${NAMESPACE}Definitions::${NAMESPACE}Definitions
+        ${NAMESPACE}::${NAMESPACE}Helpers
         ${RFC_LIBRARIES}
         ${DS_LIBRARIES}
         ${IARMBUS_LIBRARIES})
