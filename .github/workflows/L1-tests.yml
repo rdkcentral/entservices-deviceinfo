@@ -355,7 +355,7 @@ jobs:
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/ccec/drivers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/network
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests
-          -I$GITHUB_WORKSPACE/install/usr/include/wpeframework/helpers
+          -I$GITHUB_WORKSPACE/entservices-helpers/helpers
           -I$GITHUB_WORKSPACE/install/usr/include
           -I ./usr/include/libdrm
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/devicesettings.h
@@ -396,7 +396,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-helpers
           path: entservices-helpers
-          ref: develop
+          ref: feature/RDKEMW-16743
 
       - name: Build entservices-helpers
         run: >
@@ -437,7 +437,7 @@ jobs:
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/ccec/drivers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/network
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests
-          -I$GITHUB_WORKSPACE/install/usr/include/wpeframework/helpers
+          -I$GITHUB_WORKSPACE/entservices-helpers/helpers
           -I$GITHUB_WORKSPACE/install/usr/include
           -I ./usr/include/libdrm
           -I$GITHUB_WORKSPACE/install/usr/include/WPEFramework
