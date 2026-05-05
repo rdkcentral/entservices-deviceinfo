@@ -24,7 +24,6 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(${NAMESPACE}Plugins REQUIRED)
-find_package(${NAMESPACE}Helpers REQUIRED)
 
 set (TEST_SRC
     tests/test_UtilsFile.cpp
@@ -32,7 +31,6 @@ set (TEST_SRC
 
 set (TEST_LIB
     ${NAMESPACE}Plugins::${NAMESPACE}Plugins
-    ${NAMESPACE}::${NAMESPACE}Helpers
 )
 
 set (TEST_INC)
@@ -107,6 +105,7 @@ endmacro()
 #PLUGIN_DEVICEINFO
 set (DEVICEINFO_INC 
     ${CMAKE_SOURCE_DIR}/../entservices-deviceinfo/plugin
+    ${CMAKE_SOURCE_DIR}/../entservices-helpers/helpers
 )
 set (DEVICEINFO_LIBS ${NAMESPACE}DeviceInfo ${NAMESPACE}DeviceInfoImplementation)
 add_plugin_test_ex(PLUGIN_DEVICEINFO "${DEVICEINFO_SRC}" "${DEVICEINFO_INC}" "${DEVICEINFO_LIBS}")
