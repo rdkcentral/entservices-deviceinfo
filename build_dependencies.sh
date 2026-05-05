@@ -51,7 +51,11 @@ git clone --branch R4.4.1 https://github.com/rdkcentral/Thunder.git
 
 git clone --branch develop https://github.com/rdkcentral/entservices-apis.git
 
+# Clone entservices-helpers as a sibling of the workspace so that
+# ${CMAKE_SOURCE_DIR}/../entservices-helpers/helpers resolves correctly in L1Tests.
+cd ..
 git clone --branch feature/RDKEMW-16743 https://github.com/rdkcentral/entservices-helpers.git
+cd "$GITHUB_WORKSPACE"
 
 git clone --branch 1.0.1 https://github.com/rdkcentral/entservices-testframework.git
 
@@ -121,11 +125,10 @@ cmake --build build/entservices-apis --target install
 echo "======================================================================================"
 echo "building entservices-helpers"
 
-cmake -G Ninja -S entservices-helpers -B build/entservices-helpers \
+cmake -G Ninja -S ../entservices-helpers/helpers -B build/entservices-helpers \
     -DEXCEPTIONS_ENABLE=ON \
     -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr" \
     -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake" \
-    -DPLUGIN_HELPERS=ON \
 
 cmake --build build/entservices-helpers --target install
 
