@@ -16,6 +16,8 @@
 # limitations under the License.
 
 set(PLUGIN_NAME DeviceInfo)
+
+
 set(MODULE_NAME ${NAMESPACE}${PLUGIN_NAME})
 set(PLUGIN_IMPLEMENTATION ${MODULE_NAME}Implementation)
 
