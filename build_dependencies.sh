@@ -125,7 +125,7 @@ cmake --build build/entservices-apis --target install
 echo "======================================================================================"
 echo "building entservices-helpers"
 
-cmake -G Ninja -S ../entservices-helpers/helpers -B build/entservices-helpers \
+cmake -G Ninja -S ../entservices-helpers -B build/entservices-helpers \
     -DEXCEPTIONS_ENABLE=ON \
     -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr" \
     -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake" \
