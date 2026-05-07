@@ -515,7 +515,7 @@ jobs:
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/iarmmgrs-hal
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/ccec/drivers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests/headers/network
-          -I$GITHUB_WORKSPACE/install/usr/include/wpeframework/helpers
+          -I$GITHUB_WORKSPACE/entservices-helpers/helpers
           -I$GITHUB_WORKSPACE/entservices-testframework/Tests
           -I$GITHUB_WORKSPACE/Thunder/Source
           -I$GITHUB_WORKSPACE/Thunder/Source/core
