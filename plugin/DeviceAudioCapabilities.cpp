@@ -18,7 +18,6 @@
 **/
 
 #include "DeviceAudioCapabilities.h"
-
 #include "exception.hpp"
 #include "host.hpp"
 #include "manager.hpp"
