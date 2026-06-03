@@ -54,7 +54,7 @@ git clone --branch develop https://github.com/rdkcentral/entservices-apis.git
 # Clone entservices-helpers as a sibling of the workspace so that
 # ${CMAKE_SOURCE_DIR}/../entservices-helpers/helpers resolves correctly in L1Tests.
 cd ..
-git clone --branch feature/RDKEMW-16743 https://github.com/rdkcentral/entservices-helpers.git
+git clone --branch develop https://github.com/rdkcentral/entservices-helpers.git
 cd "$GITHUB_WORKSPACE"
 
 git clone --branch 1.0.1 https://github.com/rdkcentral/entservices-testframework.git
