@@ -123,7 +123,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: feature/helpers_v1
+          ref: 1.0.12
 
       - name: Checkout entservices-deviceinfo
         if: ${{ inputs.caller_source == 'local' }}
@@ -137,7 +137,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-deviceinfo
           path: entservices-deviceinfo
-          ref: feature/helpers_v1
+          ref: develop
 
       - name: Checkout googletest
         uses: actions/checkout@v3
@@ -331,7 +331,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-helpers
           path: entservices-helpers
-          ref: feature/RDKEMW-16743
+          ref: develop
 
       - name: Build entservices-helpers
         run: >
