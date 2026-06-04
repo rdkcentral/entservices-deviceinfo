@@ -306,6 +306,7 @@ jobs:
           -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake"
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
           -DUSE_DEVICESETTINGS=ON
+          -DRDK_SERVICE_L2_TEST=ON
           -DCMAKE_CXX_FLAGS="
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/ds
