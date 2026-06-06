@@ -17,6 +17,7 @@
 * limitations under the License.
 **/
 
+
 #include "DeviceInfoImplementation.h"
 
 #include "mfrMgr.h"
@@ -29,6 +30,7 @@
 
 #include <fstream>
 #include <regex>
+
 
 namespace WPEFramework {
 namespace Plugin {
