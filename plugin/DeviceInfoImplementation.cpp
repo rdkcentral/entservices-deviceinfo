@@ -124,6 +124,27 @@ namespace Plugin {
         _service = service;
         _service->AddRef();
 
+        // caching MAC addresses for Ethernet, STB and WiFi interfaces as these values are not expected to change during runtime
+        EthernetMac ethMac;
+        if (EthMac(ethMac) == Core::ERROR_NONE) {
+            m_EthMac = ethMac.ethMac;
+            m_EthMacAvailable = true;
+            LOGINFO("Ethernet MAC during configuration: %s", m_EthMac.c_str());
+        }
+
+        StbMac stbMac;
+        if (EstbMac(stbMac) == Core::ERROR_NONE) {
+            m_EstbMac = stbMac.estbMac;
+            m_EstbMacAvailable = true;
+            LOGINFO("STB MAC during configuration: %s", m_EstbMac.c_str());
+        }
+    
+        WiFiMac wiFiMac;
+        if (WifiMac(wiFiMac) == Core::ERROR_NONE) {
+            m_WifiMac = wiFiMac.wifiMac;
+            m_WifiMacAvailable = true;
+            LOGINFO("WiFi MAC during configuration: %s", m_WifiMac.c_str());
+        }
         return Core::ERROR_NONE;
     }
 
@@ -367,6 +388,12 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::EthMac(EthernetMac& ethernetMac) const
     {
+        if (m_EthMacAvailable) {
+            ethernetMac.ethMac = m_EthMac;
+            LOGINFO("Cached Ethernet MAC: %s", ethernetMac.ethMac.c_str());
+            return Core::ERROR_NONE;
+        }
+
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read eth_mac");
         if (!fp) {
             return Core::ERROR_GENERAL;
@@ -391,6 +418,12 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::EstbMac(StbMac& stbMac) const
     {
+        if (m_EstbMacAvailable) {
+            stbMac.estbMac = m_EstbMac;
+            LOGINFO("Cached STB MAC: %s", stbMac.estbMac.c_str());
+            return Core::ERROR_NONE;
+        }
+
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read estb_mac");
         if (!fp) {
                 return Core::ERROR_GENERAL;
@@ -415,6 +448,12 @@ namespace Plugin {
  
     Core::hresult DeviceInfoImplementation::WifiMac(WiFiMac& wiFiMac) const
     {
+        if (m_WifiMacAvailable) {
+            wiFiMac.wifiMac = m_WifiMac;
+            LOGINFO("Cached WiFi MAC: %s", wiFiMac.wifiMac.c_str());
+            return Core::ERROR_NONE;
+        }
+
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read wifi_mac");
         if (!fp) {
                 return Core::ERROR_GENERAL;

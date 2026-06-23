@@ -70,6 +70,12 @@ namespace Plugin {
 
     private:
         PluginHost::IShell* _service;
+        mutable std::string m_EthMac;
+        mutable std::string m_EstbMac;
+        mutable std::string m_WifiMac;
+        mutable bool m_EthMacAvailable{false};
+        mutable bool m_EstbMacAvailable{false};
+        mutable bool m_WifiMacAvailable{false};
     };
 }
 }
