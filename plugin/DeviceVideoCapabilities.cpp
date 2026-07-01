@@ -19,20 +19,46 @@
 
 #include "DeviceVideoCapabilities.h"
 
+#ifdef USE_DEVICESETTING_PLUGIN
+#include "DeviceSettingsInterface.h"
+#include <sstream>
+#else
 #include "exception.hpp"
 #include "host.hpp"
 #include "manager.hpp"
 #include "videoOutputPortConfig.hpp"
 
 #include "UtilsIarm.h"
+#endif
 
 namespace WPEFramework {
 namespace Plugin {
+
+#ifdef USE_DEVICESETTING_PLUGIN
+    void DeviceVideoCapabilities::OnDeviceSettingsActivated()
+    {
+        LOGINFO("DeviceSettingsActivated: loading video port config");
+        auto* vp = AcquireSubInterface<Exchange::IDeviceSettingsVideoPort>();
+        if (vp) {
+            LoadVideoPortConfig(vp, _videoPortConfig);
+            vp->Release();
+        } else {
+            LOGERR("OnDeviceSettingsActivated: IDeviceSettingsVideoPort not available");
+        }
+    }
+
+    void DeviceVideoCapabilities::OnDeviceSettingsDeactivated()
+    {
+        LOGINFO("DeviceSettingsDeactivated: clearing video port config");
+        _videoPortConfig.Clear();
+    }
+#endif
 
     SERVICE_REGISTRATION(DeviceVideoCapabilities, 1, 0);
 
     DeviceVideoCapabilities::DeviceVideoCapabilities()
     {
+#ifndef USE_DEVICESETTING_PLUGIN
         Utils::IARM::init();
 
         try {
@@ -43,7 +69,23 @@ namespace Plugin {
             TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
         } catch (...) {
         }
+#endif
     }
+
+    DeviceVideoCapabilities::~DeviceVideoCapabilities()
+    {
+#ifdef USE_DEVICESETTING_PLUGIN
+        DeviceSettingsClientHelper::Close();
+#endif
+    }
+
+#ifdef USE_DEVICESETTING_PLUGIN
+    uint32_t DeviceVideoCapabilities::Configure(PluginHost::IShell* service)
+    {
+        DeviceSettingsClientHelper::Open(service);
+        return Core::ERROR_NONE;
+    }
+#endif
 
     Core::hresult DeviceVideoCapabilities::SupportedVideoDisplays(RPC::IStringIterator*& supportedVideoDisplays, bool& success) const
     {
@@ -51,6 +93,21 @@ namespace Plugin {
 
         std::list<string> list;
 
+#ifdef USE_DEVICESETTING_PLUGIN
+        // Read from cached config — no COM-RPC round-trip needed for static port enumeration
+        if (_videoPortConfig.IsEmpty()) {
+            LOGERR("SupportedVideoDisplays: DeviceSettings config not available");
+            return Core::ERROR_UNAVAILABLE;
+        }
+        std::vector<VideoPortEntry> entries;
+        _videoPortConfig.BuildVideoPortEntries(entries);
+        for (size_t i = 0; i < entries.size(); ++i) {
+            const string& name = entries[i].name;
+            if (std::find(list.begin(), list.end(), name) == list.end()) {
+                list.emplace_back(name);
+            }
+        }
+#else
         try {
             const auto& vPorts = device::Host::getInstance().getVideoOutputPorts();
             for (size_t i = 0; i < vPorts.size(); i++) {
@@ -81,6 +138,7 @@ namespace Plugin {
         } catch (...) {
             result = Core::ERROR_GENERAL;
         }
+#endif
 
         if (result == Core::ERROR_NONE) {
             supportedVideoDisplays = (Core::Service<RPC::StringIterator>::Create<RPC::IStringIterator>(list));
@@ -94,6 +152,38 @@ namespace Plugin {
     {
         uint32_t result = Core::ERROR_NONE;
 
+#ifdef USE_DEVICESETTING_PLUGIN
+        // COM-RPC path: use IDeviceSettingsHost::GetEDID (maps device::Host::getHostEDID).
+        // Standard EDID is 128 bytes (base) or 256 bytes (with 1 extension block).
+        // Allocate 256 bytes; trailing zeros are trimmed before base64 encoding.
+        auto* host = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsHost>();
+        if (!host) {
+            LOGERR("HostEDID: DeviceSettings host interface not available");
+            return Core::ERROR_UNAVAILABLE;
+        }
+
+        static const uint16_t kEdidBufLen = 256;
+        std::vector<uint8_t> edidBuf(kEdidBufLen, 0);
+        result = host->GetEDID(edidBuf.data(), kEdidBufLen);
+        host->Release();
+
+        if (result == Core::ERROR_NONE) {
+            // Trim trailing zero-padding to find the actual EDID size
+            size_t actualLen = kEdidBufLen;
+            while (actualLen > 0 && edidBuf[actualLen - 1] == 0) {
+                actualLen--;
+            }
+            if (actualLen == 0) actualLen = kEdidBufLen; // safety: keep full buffer
+
+            if (actualLen > static_cast<size_t>(std::numeric_limits<uint16_t>::max())) {
+                result = Core::ERROR_GENERAL;
+            } else {
+                string base64String;
+                Core::ToString(edidBuf.data(), static_cast<uint16_t>(actualLen), true, base64String);
+                hostEdid.EDID = std::move(base64String);
+            }
+        }
+#else
         std::vector<uint8_t> edidVec({ 'u', 'n', 'k', 'n', 'o', 'w', 'n' });
         try {
             std::vector<unsigned char> edidVec2;
@@ -120,6 +210,7 @@ namespace Plugin {
                 hostEdid.EDID = std::move(base64String);
             }
         }
+#endif
 
         return result;
     }
@@ -128,6 +219,20 @@ namespace Plugin {
     {
         uint32_t result = Core::ERROR_NONE;
 
+#ifdef USE_DEVICESETTING_PLUGIN
+        // Read from cached config — no COM-RPC round-trip needed
+        if (_videoPortConfig.IsEmpty()) {
+            LOGERR("DefaultResolution: DeviceSettings config not available");
+            return Core::ERROR_UNAVAILABLE;
+        }
+        const string portName = videoDisplay.empty() ? _videoPortConfig.GetDefaultVideoPortName() : videoDisplay;
+        const string res = _videoPortConfig.GetDefaultResolution(portName);
+        if (res.empty()) {
+            result = Core::ERROR_NOT_EXIST;
+        } else {
+            defaultResln.defaultResolution = res;
+        }
+#else
         try {
             auto strVideoPort = videoDisplay.empty() ? device::Host::getInstance().getDefaultVideoPortName() : videoDisplay;
             auto& vPort = device::Host::getInstance().getVideoOutputPort(strVideoPort);
@@ -141,6 +246,7 @@ namespace Plugin {
         } catch (...) {
             result = Core::ERROR_GENERAL;
         }
+#endif
 
         return result;
     }
@@ -151,6 +257,30 @@ namespace Plugin {
 
         std::list<string> list;
 
+#ifdef USE_DEVICESETTING_PLUGIN
+        // Read from cached config — no COM-RPC round-trip needed
+        if (_videoPortConfig.IsEmpty()) {
+            LOGERR("SupportedResolutions: DeviceSettings config not available");
+            return Core::ERROR_UNAVAILABLE;
+        }
+        const string portName = videoDisplay.empty() ? _videoPortConfig.GetDefaultVideoPortName() : videoDisplay;
+        VideoPortEntry resolvedEntry;
+        if (!_videoPortConfig.ResolveByName(portName, resolvedEntry)) {
+            result = Core::ERROR_NOT_EXIST;
+        } else {
+            VideoPortTypeConfig typeConfig;
+            if (_videoPortConfig.GetTypeConfig(resolvedEntry.type, typeConfig)) {
+                // Parse comma-separated list of supported resolution names
+                std::istringstream ss(typeConfig.supportedResolutionNames);
+                string token;
+                while (std::getline(ss, token, ',')) {
+                    if (!token.empty()) {
+                        list.emplace_back(token);
+                    }
+                }
+            }
+        }
+#else
         try {
             auto strVideoPort = videoDisplay.empty() ? device::Host::getInstance().getDefaultVideoPortName() : videoDisplay;
             auto& vPort = device::Host::getInstance().getVideoOutputPort(strVideoPort);
@@ -167,6 +297,7 @@ namespace Plugin {
         } catch (...) {
             result = Core::ERROR_GENERAL;
         }
+#endif
 
         if (result == Core::ERROR_NONE) {
             supportedResolutions = (Core::Service<RPC::StringIterator>::Create<RPC::IStringIterator>(list));
@@ -180,6 +311,43 @@ namespace Plugin {
     {
         uint32_t result = Core::ERROR_NONE;
 
+#ifdef USE_DEVICESETTING_PLUGIN
+        // Use cached config for port name resolution — only HDCP version query needs COM-RPC
+        if (_videoPortConfig.IsEmpty()) {
+            LOGERR("SupportedHdcp: DeviceSettings config not available");
+            return Core::ERROR_UNAVAILABLE;
+        }
+        const string portName = videoDisplay.empty() ? _videoPortConfig.GetDefaultVideoPortName() : videoDisplay;
+        VideoPortEntry resolvedEntry;
+        if (!_videoPortConfig.ResolveByName(portName, resolvedEntry)) {
+            return Core::ERROR_NOT_EXIST;
+        }
+        auto* vp = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsVideoPort>();
+        if (!vp) {
+            LOGERR("SupportedHdcp: IDeviceSettingsVideoPort interface not available");
+            return Core::ERROR_UNAVAILABLE;
+        }
+        int32_t handle = -1;
+        result = vp->GetVideoPort(resolvedEntry.type, resolvedEntry.index, handle);
+        if (result == Core::ERROR_NONE) {
+            Exchange::IDeviceSettingsVideoPort::HDCPProtocolVersion version;
+            result = vp->GetHDCPProtocolVersionOnVideoPort(handle, version);
+            if (result == Core::ERROR_NONE) {
+                switch (version) {
+                case Exchange::IDeviceSettingsVideoPort::DS_HDCP_VERSION_2X:
+                    supportedHDCPVer.supportedHDCPVersion = HDCP_22;
+                    break;
+                case Exchange::IDeviceSettingsVideoPort::DS_HDCP_VERSION_1X:
+                    supportedHDCPVer.supportedHDCPVersion = HDCP_14;
+                    break;
+                default:
+                    result = Core::ERROR_GENERAL;
+                    break;
+                }
+            }
+        }
+        vp->Release();
+#else
         try {
             auto strVideoPort = videoDisplay.empty() ? device::Host::getInstance().getDefaultVideoPortName() : videoDisplay;
             auto& vPort = device::VideoOutputPortConfig::getInstance().getPort(strVideoPort);
@@ -202,6 +370,7 @@ namespace Plugin {
         } catch (...) {
             result = Core::ERROR_GENERAL;
         }
+#endif
         return result;
     }
 }
