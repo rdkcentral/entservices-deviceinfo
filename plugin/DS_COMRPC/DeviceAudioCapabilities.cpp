@@ -67,7 +67,7 @@ namespace Plugin {
             return Core::ERROR_UNAVAILABLE;
         }
         std::vector<AudioPortEntry> entries;
-        _audioConfig.BuildAudioPortEntries(entries);
+        _audioConfig.getAudioPortEntries(entries);
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
             if (audioPort.empty() || entries[i].name == audioPort) {
@@ -131,7 +131,7 @@ namespace Plugin {
             return Core::ERROR_UNAVAILABLE;
         }
         std::vector<AudioPortEntry> entries;
-        _audioConfig.BuildAudioPortEntries(entries);
+        _audioConfig.getAudioPortEntries(entries);
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
             if (audioPort.empty() || entries[i].name == audioPort) {
@@ -188,7 +188,7 @@ namespace Plugin {
             return Core::ERROR_UNAVAILABLE;
         }
         std::vector<AudioPortEntry> entries;
-        _audioConfig.BuildAudioPortEntries(entries);
+        _audioConfig.getAudioPortEntries(entries);
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
             if (audioPort.empty() || entries[i].name == audioPort) {
