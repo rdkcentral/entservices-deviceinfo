@@ -25,13 +25,9 @@
 #include "mfrMgr.h"
 #include <unordered_map>
 
-#ifdef USE_DEVICESETTING_PLUGIN
-#include "DeviceSettingsInterface.h"
-#else
 #include "exception.hpp"
 #include "host.hpp"
 #include "manager.hpp"
-#endif
 
 #include <fstream>
 #include <regex>
@@ -103,7 +99,6 @@ namespace Plugin {
     DeviceInfoImplementation::DeviceInfoImplementation():_service(nullptr)
     {
         Utils::IARM::init();
-#ifndef USE_DEVICESETTING_PLUGIN
         try {
             device::Manager::Initialize();
         } catch (const device::Exception& e) {
@@ -112,16 +107,11 @@ namespace Plugin {
             TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
         } catch (...) {
         }
-#endif
     }
 
     DeviceInfoImplementation::~DeviceInfoImplementation()
     {
         LOGINFO("DeviceInfoImplementation destructor");
-#ifdef USE_DEVICESETTING_PLUGIN
-        // Close COM-RPC link BEFORE releasing _service reference.
-        DeviceSettingsClientHelper::Close();
-#endif
         if (_service != nullptr)
         {
             _service->Release();
@@ -136,33 +126,9 @@ namespace Plugin {
         _service = service;
         _service->AddRef();
 
-#ifdef USE_DEVICESETTING_PLUGIN
-        // Open a single COM-RPC link to DeviceSettings (root IDeviceSettings).
-        // Sub-interfaces are acquired on demand via AcquireSubInterface<T>().
-        DeviceSettingsClientHelper::Open(service);
-#endif
         return Core::ERROR_NONE;
     }
 
-#ifdef USE_DEVICESETTING_PLUGIN
-    void DeviceInfoImplementation::OnDeviceSettingsActivated()
-    {
-        LOGINFO("DeviceSettingsActivated: loading audio port config");
-        auto* audio = AcquireSubInterface<Exchange::IDeviceSettingsAudio>();
-        if (audio) {
-            LoadAudioConfig(audio, _audioConfig);
-            audio->Release();
-        } else {
-            LOGERR("OnDeviceSettingsActivated: IDeviceSettingsAudio not available");
-        }
-    }
-
-    void DeviceInfoImplementation::OnDeviceSettingsDeactivated()
-    {
-        LOGINFO("DeviceSettingsDeactivated: clearing audio port config");
-        _audioConfig.Clear();
-    }
-#endif
 
     Core::hresult DeviceInfoImplementation::SerialNumber(DeviceSerialNo& deviceSerialNo) const
     {
@@ -306,20 +272,6 @@ namespace Plugin {
         
         if (result == Core::ERROR_NONE )
         {
-            // Extract rdk version from imagename, e.g.:
-            // ELTE11MWR_8.3p9s1_DEV              -> 8.3p9s1
-            // COESST11AEI_E032.031.00.8.6p99s2_DEV -> 8.6p99s2
-            // SKTL11MEIIT_DEV_rel-15567_20260805034710_8.5.3.7B1 -> 0.0
-            {
-                std::smatch mwMatch;
-                if (std::regex_search(firmwareVersionInfo.imagename, mwMatch,
-                        std::regex(R"(_(?:[A-Za-z][^_]*?)?(\d+\.\d+[^.\s_]+)(?:_|$))"))) {
-                    firmwareVersionInfo.rdk = mwMatch[1];
-                } else {
-                    firmwareVersionInfo.rdk = "0.0";
-                }
-            }
-
             if (GetFileRegex(_T("/version.txt"), std::regex("^SDK_VERSION=([^\\n]+)$"), firmwareVersionInfo.sdk) != Core::ERROR_NONE)
             {
                 firmwareVersionInfo.sdk = "";
@@ -518,18 +470,6 @@ namespace Plugin {
 
         std::list<string> list;
 
-#ifdef USE_DEVICESETTING_PLUGIN
-        // Read from cached audio config — no COM-RPC round-trip needed
-        if (_audioConfig.IsEmpty()) {
-            LOGERR("SupportedAudioPorts: DeviceSettings config not available");
-            return Core::ERROR_UNAVAILABLE;
-        }
-        std::vector<AudioPortEntry> entries;
-        _audioConfig.BuildAudioPortEntries(entries);
-        for (size_t i = 0; i < entries.size(); ++i) {
-            list.emplace_back(entries[i].name);
-        }
-#else
         try {
             const auto& aPorts = device::Host::getInstance().getAudioOutputPorts();
             for (size_t i = 0; i < aPorts.size(); i++) {
@@ -544,60 +484,12 @@ namespace Plugin {
         } catch (...) {
             result = Core::ERROR_GENERAL;
         }
-#endif
 
         if (result == Core::ERROR_NONE) {
             supportedAudioPorts = (Core::Service<RPC::StringIterator>::Create<RPC::IStringIterator>(list));
             success = true;
         }
 
-        return result;
-    }
-
-    Core::hresult DeviceInfoImplementation::DeviceId(DeviceIdInfo& deviceIdInfo) const
-    {
-        if (_deviceIDCached) {
-            deviceIdInfo.deviceId = _cachedDeviceID;
-            return Core::ERROR_NONE;
-        }
-
-        DeviceSerialNo deviceSerialNo;
-        Core::hresult result = SerialNumber(deviceSerialNo);
-        if (result == Core::ERROR_NONE) {
-            const string& serialNumber = deviceSerialNo.serialnumber;
-            bool isNumericOnly = !serialNumber.empty() &&
-                std::all_of(serialNumber.begin(), serialNumber.end(),
-                    [](unsigned char c) { return std::isdigit(c); });
-
-            // if the Device Serial Number is alphanumeric, then we will return the serial number as deviceID.
-            // else we will get the deviceID from MfgSerialNumber.
-            if (!isNumericOnly) {
-                deviceIdInfo.deviceId = serialNumber;
-            } else {
-                string mfgHwid;
-                if (GetMFRData(mfrSERIALIZED_TYPE_HWID, mfgHwid) == Core::ERROR_NONE && !mfgHwid.empty()) {
-                    deviceIdInfo.deviceId = mfgHwid + "000" + serialNumber.substr(5,7);
-                } else {
-                    if (GetMFRData(mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER, deviceIdInfo.deviceId) != Core::ERROR_NONE) {
-                        deviceIdInfo.deviceId = serialNumber;
-                    }
-                }
-            }
-
-            _cachedDeviceID = deviceIdInfo.deviceId;
-            _deviceIDCached = true;
-        }
-
-        return result;
-    }
-
-    Core::hresult DeviceInfoImplementation::HardwareId(HardwareIdInfo& hardwareIdInfo) const
-    {
-        DeviceIdInfo deviceIdInfo;
-        Core::hresult result = DeviceId(deviceIdInfo);
-        if (result == Core::ERROR_NONE) {
-            hardwareIdInfo.hardwareId = deviceIdInfo.deviceId.substr(0, 6);
-        }
         return result;
     }
 }

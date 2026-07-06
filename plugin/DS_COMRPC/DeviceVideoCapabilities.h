@@ -19,23 +19,18 @@
 
 #pragma once
 
-#include "Module.h"
+#include "../Module.h"
 #include <interfaces/IDeviceInfo.h>
 
-#ifdef USE_DEVICESETTING_PLUGIN
 #include <interfaces/IConfiguration.h>
-#include "DeviceSettingsInterface.h"
-#include "DeviceSettingsConfig.h"
-#endif
+#include "DeviceSettingsClientHelper.h"
 
 namespace WPEFramework {
 namespace Plugin {
     class DeviceVideoCapabilities
         : public Exchange::IDeviceVideoCapabilities
-#ifdef USE_DEVICESETTING_PLUGIN
         , public Exchange::IConfiguration
         , public DeviceSettingsClientHelper
-#endif
     {
     private:
         DeviceVideoCapabilities(const DeviceVideoCapabilities&) = delete;
@@ -47,15 +42,11 @@ namespace Plugin {
 
         BEGIN_INTERFACE_MAP(DeviceVideoCapabilities)
         INTERFACE_ENTRY(Exchange::IDeviceVideoCapabilities)
-#ifdef USE_DEVICESETTING_PLUGIN
         INTERFACE_ENTRY(Exchange::IConfiguration)
-#endif
         END_INTERFACE_MAP
 
-#ifdef USE_DEVICESETTING_PLUGIN
         // IConfiguration: called by DeviceInfo proxy after Root<>() to pass IShell.
         uint32_t Configure(PluginHost::IShell* service) override;
-#endif
 
     private:
         // IDeviceVideoCapabilities interface
@@ -65,7 +56,6 @@ namespace Plugin {
         Core::hresult SupportedResolutions(const string& videoDisplay, RPC::IStringIterator*& supportedResolutions, bool& success) const override;
         Core::hresult SupportedHdcp(const string& videoDisplay, SupportedHDCPVer& supportedHDCPVer) const override;
 
-#ifdef USE_DEVICESETTING_PLUGIN
     private:
         template<typename T>
         T* AcquireSubInterfaceMutable() const {
@@ -79,7 +69,6 @@ namespace Plugin {
     protected:
         void OnDeviceSettingsActivated() override;
         void OnDeviceSettingsDeactivated() override;
-#endif
     };
 }
 }

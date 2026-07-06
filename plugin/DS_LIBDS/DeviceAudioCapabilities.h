@@ -19,23 +19,14 @@
 
 #pragma once
 
-#include "Module.h"
+#include "../Module.h"
 #include <interfaces/IDeviceInfo.h>
 
-#ifdef USE_DEVICESETTING_PLUGIN
-#include <interfaces/IConfiguration.h>
-#include "DeviceSettingsInterface.h"
-#include "DeviceSettingsConfig.h"
-#endif
 
 namespace WPEFramework {
 namespace Plugin {
     class DeviceAudioCapabilities
         : public Exchange::IDeviceAudioCapabilities
-#ifdef USE_DEVICESETTING_PLUGIN
-        , public Exchange::IConfiguration
-        , public DeviceSettingsClientHelper
-#endif
     {
     private:
         DeviceAudioCapabilities(const DeviceAudioCapabilities&) = delete;
@@ -47,15 +38,8 @@ namespace Plugin {
 
         BEGIN_INTERFACE_MAP(DeviceAudioCapabilities)
         INTERFACE_ENTRY(Exchange::IDeviceAudioCapabilities)
-#ifdef USE_DEVICESETTING_PLUGIN
-        INTERFACE_ENTRY(Exchange::IConfiguration)
-#endif
         END_INTERFACE_MAP
 
-#ifdef USE_DEVICESETTING_PLUGIN
-        // IConfiguration: called by DeviceInfo proxy after Root<>() to pass IShell.
-        uint32_t Configure(PluginHost::IShell* service) override;
-#endif
 
     private:
         // IDeviceAudioCapabilities interface
@@ -63,21 +47,6 @@ namespace Plugin {
         Core::hresult MS12Capabilities(const string& audioPort, Exchange::IDeviceAudioCapabilities::IMS12CapabilityIterator*& ms12Capabilities, bool& success) const override;
         Core::hresult SupportedMS12AudioProfiles(const string& audioPort, RPC::IStringIterator*& supportedMS12AudioProfiles, bool& success) const override;
 
-#ifdef USE_DEVICESETTING_PLUGIN
-    private:
-        template<typename T>
-        T* AcquireSubInterfaceMutable() const {
-            return const_cast<DeviceAudioCapabilities*>(this)->AcquireSubInterface<T>();
-        }
-
-        // Audio config is loaded once in OnDeviceSettingsActivated and cleared on deactivation.
-        // All const methods read from the cache — no per-call GetAudioConfig() round-trip.
-        mutable AudioConfigStore _audioConfig;
-
-    protected:
-        void OnDeviceSettingsActivated() override;
-        void OnDeviceSettingsDeactivated() override;
-#endif
     };
 }
 }
