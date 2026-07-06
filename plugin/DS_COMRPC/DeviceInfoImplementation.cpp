@@ -484,7 +484,7 @@ namespace Plugin {
             return Core::ERROR_UNAVAILABLE;
         }
         std::vector<AudioPortEntry> entries;
-        _audioConfig.BuildAudioPortEntries(entries);
+        _audioConfig.getAudioPortEntries(entries);
         for (size_t i = 0; i < entries.size(); ++i) {
             list.emplace_back(entries[i].name);
         }
