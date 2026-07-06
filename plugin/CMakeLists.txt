@@ -68,7 +68,7 @@ install(TARGETS ${MODULE_NAME}
 if (USE_DEVICESETTING_PLUGIN)
     set(IMPL_DIR DS_COMRPC)
 else()
-    set(IMPL_DIR DS_LIBDS)
+    set(IMPL_DIR DS_IARM)
 endif()
 
 add_library(${PLUGIN_IMPLEMENTATION} SHARED
