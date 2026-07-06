@@ -65,10 +65,16 @@ target_link_libraries(${MODULE_NAME}
 install(TARGETS ${MODULE_NAME}
     DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/${STORAGE_DIRECTORY}/plugins)
 
+if (USE_DEVICESETTING_PLUGIN)
+    set(IMPL_DIR DS_COMRPC)
+else()
+    set(IMPL_DIR DS_LIBDS)
+endif()
+
 add_library(${PLUGIN_IMPLEMENTATION} SHARED
-    DeviceInfoImplementation.cpp
-    DeviceAudioCapabilities.cpp
-    DeviceVideoCapabilities.cpp
+    ${IMPL_DIR}/DeviceInfoImplementation.cpp
+    ${IMPL_DIR}/DeviceAudioCapabilities.cpp
+    ${IMPL_DIR}/DeviceVideoCapabilities.cpp
     Module.cpp)
 
 target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE
@@ -85,8 +91,8 @@ set_target_properties(${PLUGIN_IMPLEMENTATION} PROPERTIES
         CXX_STANDARD_REQUIRED YES)
 
 set_source_files_properties(
-        DeviceAudioCapabilities.cpp
-        DeviceVideoCapabilities.cpp
+        ${IMPL_DIR}/DeviceAudioCapabilities.cpp
+        ${IMPL_DIR}/DeviceVideoCapabilities.cpp
         PROPERTIES
         COMPILE_FLAGS "-fexceptions")
 

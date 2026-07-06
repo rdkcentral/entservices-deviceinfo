@@ -25,13 +25,7 @@
 #include "mfrMgr.h"
 #include <unordered_map>
 
-#ifdef USE_DEVICESETTING_PLUGIN
-#include "DeviceSettingsInterface.h"
-#else
-#include "exception.hpp"
-#include "host.hpp"
-#include "manager.hpp"
-#endif
+#include "DeviceSettingsClientHelper.h"
 
 #include <fstream>
 #include <regex>
@@ -103,25 +97,13 @@ namespace Plugin {
     DeviceInfoImplementation::DeviceInfoImplementation():_service(nullptr)
     {
         Utils::IARM::init();
-#ifndef USE_DEVICESETTING_PLUGIN
-        try {
-            device::Manager::Initialize();
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-        } catch (...) {
-        }
-#endif
     }
 
     DeviceInfoImplementation::~DeviceInfoImplementation()
     {
         LOGINFO("DeviceInfoImplementation destructor");
-#ifdef USE_DEVICESETTING_PLUGIN
         // Close COM-RPC link BEFORE releasing _service reference.
         DeviceSettingsClientHelper::Close();
-#endif
         if (_service != nullptr)
         {
             _service->Release();
@@ -136,24 +118,17 @@ namespace Plugin {
         _service = service;
         _service->AddRef();
 
-#ifdef USE_DEVICESETTING_PLUGIN
         // Open a single COM-RPC link to DeviceSettings (root IDeviceSettings).
         // Sub-interfaces are acquired on demand via AcquireSubInterface<T>().
         DeviceSettingsClientHelper::Open(service);
-#endif
         return Core::ERROR_NONE;
     }
 
-#ifdef USE_DEVICESETTING_PLUGIN
     void DeviceInfoImplementation::OnDeviceSettingsActivated()
     {
         LOGINFO("DeviceSettingsActivated: loading audio port config");
-        auto* audio = AcquireSubInterface<Exchange::IDeviceSettingsAudio>();
-        if (audio) {
-            LoadAudioConfig(audio, _audioConfig);
-            audio->Release();
-        } else {
-            LOGERR("OnDeviceSettingsActivated: IDeviceSettingsAudio not available");
+        if (!LoadAudioConfig(_audioConfig)) {
+            LOGERR("OnDeviceSettingsActivated: failed to load audio config");
         }
     }
 
@@ -162,7 +137,6 @@ namespace Plugin {
         LOGINFO("DeviceSettingsDeactivated: clearing audio port config");
         _audioConfig.Clear();
     }
-#endif
 
     Core::hresult DeviceInfoImplementation::SerialNumber(DeviceSerialNo& deviceSerialNo) const
     {
@@ -504,7 +478,6 @@ namespace Plugin {
 
         std::list<string> list;
 
-#ifdef USE_DEVICESETTING_PLUGIN
         // Read from cached audio config — no COM-RPC round-trip needed
         if (_audioConfig.IsEmpty()) {
             LOGERR("SupportedAudioPorts: DeviceSettings config not available");
@@ -515,22 +488,6 @@ namespace Plugin {
         for (size_t i = 0; i < entries.size(); ++i) {
             list.emplace_back(entries[i].name);
         }
-#else
-        try {
-            const auto& aPorts = device::Host::getInstance().getAudioOutputPorts();
-            for (size_t i = 0; i < aPorts.size(); i++) {
-                list.emplace_back(aPorts.at(i).getName());
-            }
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (...) {
-            result = Core::ERROR_GENERAL;
-        }
-#endif
 
         if (result == Core::ERROR_NONE) {
             supportedAudioPorts = (Core::Service<RPC::StringIterator>::Create<RPC::IStringIterator>(list));

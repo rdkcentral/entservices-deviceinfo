@@ -19,7 +19,7 @@
 
 #pragma once
 
-#include "Module.h"
+#include "../Module.h"
 
 #include <interfaces/Ids.h>
 #include <interfaces/IDeviceInfo.h>
@@ -28,19 +28,12 @@
 #include <com/com.h>
 #include <core/core.h>
 
-#ifdef USE_DEVICESETTING_PLUGIN
-#include "DeviceSettingsInterface.h"
-#include "DeviceSettingsConfig.h"
-#endif
 
 namespace WPEFramework {
 namespace Plugin {
     class DeviceInfoImplementation
         : public Exchange::IDeviceInfo
         , public Exchange::IConfiguration
-#ifdef USE_DEVICESETTING_PLUGIN
-        , public DeviceSettingsClientHelper
-#endif
     {
     public:
         // We do not allow this plugin to be copied !!
@@ -84,22 +77,6 @@ namespace Plugin {
         // constructor initialisation order matches member declaration order.
         PluginHost::IShell* _service;
 
-#ifdef USE_DEVICESETTING_PLUGIN
-    private:
-        template<typename T>
-        T* AcquireSubInterfaceMutable() const {
-            return const_cast<DeviceInfoImplementation*>(this)->AcquireSubInterface<T>();
-        }
-
-        // Audio config is loaded once in OnDeviceSettingsActivated and cleared on deactivation.
-        // SupportedAudioPorts reads from cache — no COM-RPC round-trip per call.
-        mutable AudioConfigStore _audioConfig;
-
-    protected:
-        // DeviceSettingsClientHelper lifecycle callbacks.
-        void OnDeviceSettingsActivated() override;
-        void OnDeviceSettingsDeactivated() override;
-#endif
     };
 }
 }
