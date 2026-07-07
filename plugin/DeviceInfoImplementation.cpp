@@ -27,6 +27,8 @@
 #include "manager.hpp"
 #include "UtilsIarm.h"
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <regex>
 
@@ -87,6 +89,28 @@ namespace Plugin {
                 TRACE_GLOBAL(Trace::Information, (_T("RFC error [%d] for %s"), status, name));
             }
 
+            return result;
+        }
+
+        bool IsValidInterfaceName(const std::string& name)
+        {
+            static const std::regex validName("^[A-Za-z0-9_.:-]+$");
+            return !name.empty() && std::regex_match(name, validName);
+        }
+
+        uint32_t GetMacFromSysfs(const std::string& ifName, std::string& mac)
+        {
+            if (!IsValidInterfaceName(ifName)) {
+                LOGINFO("GetMacFromSysfs: invalid interface name: %s", ifName.c_str());
+                return Core::ERROR_GENERAL;
+            }
+            std::string path = "/sys/class/net/" + ifName + "/address";
+            static const std::regex macPattern("^([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})$");
+            uint32_t result = GetFileRegex(path.c_str(), macPattern, mac);
+            if (result == Core::ERROR_NONE) {
+                std::transform(mac.begin(), mac.end(), mac.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+            }
             return result;
         }
         
@@ -367,74 +391,73 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::EthMac(EthernetMac& ethernetMac) const
     {
-        FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read eth_mac");
-        if (!fp) {
+        std::string ethernetInterface;
+        if (GetFileRegex(_T("/etc/device.properties"),
+            std::regex("^ETHERNET_INTERFACE(?:\\s*)=(?:\\s*)(?:\"{0,1})([^\"\\n]+)(?:\"{0,1})(?:\\s*)$"),
+            ethernetInterface) != Core::ERROR_NONE || ethernetInterface.empty()) {
             return Core::ERROR_GENERAL;
-    	}
-
-        std::ostringstream oss;
-        char buffer[256];
-        while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
-            oss << buffer;
         }
-        v_secure_pclose(fp);
-
-        ethernetMac.ethMac = oss.str();
-
-        // Remove trailing newline if present
-        if (!ethernetMac.ethMac.empty() && ethernetMac.ethMac.back() == '\n') {
-             ethernetMac.ethMac.pop_back();
+        if (!IsValidInterfaceName(ethernetInterface)) {
+            LOGINFO("Invalid interface name for ETHERNET_INTERFACE: %s", ethernetInterface.c_str());
+            return Core::ERROR_GENERAL;
         }
-
-        return Core::ERROR_NONE;
+        return GetMacFromSysfs(ethernetInterface, ethernetMac.ethMac);
     }
 
     Core::hresult DeviceInfoImplementation::EstbMac(StbMac& stbMac) const
     {
-        FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read estb_mac");
-        if (!fp) {
+        std::string deviceName;
+        GetFileRegex(_T("/etc/device.properties"),
+            std::regex("^DEVICE_NAME(?:\\s*)=(?:\\s*)(?:\"{0,1})([^\"\\n]+)(?:\"{0,1})(?:\\s*)$"),
+            deviceName);
+
+        if (deviceName == "XiOne-SCB") {
+            FILE* fp = v_secure_popen("r", "/bin/MfrUtil devicemac");
+            if (!fp) {
                 return Core::ERROR_GENERAL;
+            }
+            char buffer[256];
+            std::string lastLine;
+            while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
+                std::string line(buffer);
+                if (!line.empty() && line.back() == '\n') {
+                    line.pop_back();
+                }
+                if (!line.empty()) {
+                    lastLine = line;
+                }
+            }
+            v_secure_pclose(fp);
+            stbMac.estbMac = lastLine;
+            return Core::ERROR_NONE;
         }
 
-        std::ostringstream oss;
-        char buffer[256];
-        while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
-                oss << buffer;
+        std::string estbInterface;
+        if (GetFileRegex(_T("/etc/device.properties"),
+            std::regex("^ESTB_INTERFACE(?:\\s*)=(?:\\s*)(?:\"{0,1})([^\"\\n]+)(?:\"{0,1})(?:\\s*)$"),
+            estbInterface) != Core::ERROR_NONE || estbInterface.empty()) {
+            return Core::ERROR_GENERAL;
         }
-        v_secure_pclose(fp);
-
-        stbMac.estbMac = oss.str();
-
-        // Remove trailing newline if present
-        if (!stbMac.estbMac.empty() && stbMac.estbMac.back() == '\n') {
-                stbMac.estbMac.pop_back();
+        if (!IsValidInterfaceName(estbInterface)) {
+            LOGINFO("Invalid interface name for ESTB_INTERFACE: %s", estbInterface.c_str());
+            return Core::ERROR_GENERAL;
         }
-
-        return Core::ERROR_NONE;
+        return GetMacFromSysfs(estbInterface, stbMac.estbMac);
     }
  
     Core::hresult DeviceInfoImplementation::WifiMac(WiFiMac& wiFiMac) const
     {
-        FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read wifi_mac");
-        if (!fp) {
-                return Core::ERROR_GENERAL;
+        std::string wifiInterface;
+        if (GetFileRegex(_T("/etc/device.properties"),
+            std::regex("^WIFI_INTERFACE(?:\\s*)=(?:\\s*)(?:\"{0,1})([^\"\\n]+)(?:\"{0,1})(?:\\s*)$"),
+            wifiInterface) != Core::ERROR_NONE || wifiInterface.empty()) {
+            return Core::ERROR_GENERAL;
         }
-
-        std::ostringstream oss;
-        char buffer[256];
-        while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
-                oss << buffer;
+        if (!IsValidInterfaceName(wifiInterface)) {
+            LOGINFO("Invalid interface name for WIFI_INTERFACE: %s", wifiInterface.c_str());
+            return Core::ERROR_GENERAL;
         }
-        v_secure_pclose(fp);
-
-        wiFiMac.wifiMac = oss.str();
- 
-        // Remove trailing newline if present
-        if (!wiFiMac.wifiMac.empty() && wiFiMac.wifiMac.back() == '\n') {
-                wiFiMac.wifiMac.pop_back();
-        }
-
-        return Core::ERROR_NONE;
+        return GetMacFromSysfs(wifiInterface, wiFiMac.wifiMac);
     }
 
     Core::hresult DeviceInfoImplementation::EstbIp(StbIp& stbIp) const
