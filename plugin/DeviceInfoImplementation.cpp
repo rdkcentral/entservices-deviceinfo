@@ -29,6 +29,7 @@
 
 #include <fstream>
 #include <regex>
+#include <chrono>
 
 namespace WPEFramework {
 namespace Plugin {
@@ -367,17 +368,23 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::EthMac(EthernetMac& ethernetMac) const
     {
+		auto t0 = std::chrono::steady_clock::now();
+        LOGINFO("DeviceInfo::EthMac enter");
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read eth_mac");
         if (!fp) {
+			LOGERR("DeviceInfo::EthMac popen failed");
             return Core::ERROR_GENERAL;
     	}
+		LOGINFO("DeviceInfo::EthMac popen ok (script invoked)");
 
         std::ostringstream oss;
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
             oss << buffer;
         }
-        v_secure_pclose(fp);
+        int rc = v_secure_pclose(fp);
+		auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+        LOGINFO("DeviceInfo::EthMac pclose rc=%d elapsedMs=%lld", rc, (long long)ms);
 
         ethernetMac.ethMac = oss.str();
 
@@ -391,17 +398,23 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::EstbMac(StbMac& stbMac) const
     {
+		auto t0 = std::chrono::steady_clock::now();
+        LOGINFO("DeviceInfo::EstbMac enter");
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read estb_mac");
         if (!fp) {
+			    LOGERR("DeviceInfo::EstbMac popen failed");
                 return Core::ERROR_GENERAL;
         }
 
+		LOGINFO("DeviceInfo::EstbMac popen ok (script invoked)");
         std::ostringstream oss;
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
                 oss << buffer;
         }
-        v_secure_pclose(fp);
+        int rc = v_secure_pclose(fp);
+		auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+        LOGINFO("DeviceInfo::EstbMac pclose rc=%d elapsedMs=%lld", rc, (long long)ms);
 
         stbMac.estbMac = oss.str();
 
@@ -415,17 +428,23 @@ namespace Plugin {
  
     Core::hresult DeviceInfoImplementation::WifiMac(WiFiMac& wiFiMac) const
     {
+		auto t0 = std::chrono::steady_clock::now();
+        LOGINFO("DeviceInfo::WifiMac enter");
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read wifi_mac");
         if (!fp) {
+			    LOGERR("DeviceInfo::WifiMac popen failed");
                 return Core::ERROR_GENERAL;
         }
+		LOGINFO("DeviceInfo::WifiMac popen ok (script invoked)");
 
         std::ostringstream oss;
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
                 oss << buffer;
         }
-        v_secure_pclose(fp);
+        int rc = v_secure_pclose(fp);
+		auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+        LOGINFO("DeviceInfo::WifiMac pclose rc=%d elapsedMs=%lld", rc, (long long)ms);
 
         wiFiMac.wifiMac = oss.str();
  
