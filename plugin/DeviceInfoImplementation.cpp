@@ -379,9 +379,12 @@ namespace Plugin {
 
         std::ostringstream oss;
         char buffer[256];
+		int lines = 0;
+		LOGINFO("DeviceInfo::EthMac read loop start");
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
             oss << buffer;
         }
+		LOGINFO("DeviceInfo::EthMac read loop done lines=%d bytes=%zu", lines, oss.str().size());
         int rc = v_secure_pclose(fp);
 		auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
         LOGINFO("DeviceInfo::EthMac pclose rc=%d elapsedMs=%lld", rc, (long long)ms);
@@ -409,9 +412,12 @@ namespace Plugin {
 		LOGINFO("DeviceInfo::EstbMac popen ok (script invoked)");
         std::ostringstream oss;
         char buffer[256];
+		int lines = 0;
+		LOGINFO("DeviceInfo::EstbMac read loop start");
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
                 oss << buffer;
         }
+		LOGINFO("DeviceInfo::EstbMac read loop done lines=%d bytes=%zu", lines, oss.str().size());
         int rc = v_secure_pclose(fp);
 		auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
         LOGINFO("DeviceInfo::EstbMac pclose rc=%d elapsedMs=%lld", rc, (long long)ms);
@@ -439,9 +445,12 @@ namespace Plugin {
 
         std::ostringstream oss;
         char buffer[256];
+		int lines = 0;
+		LOGINFO("DeviceInfo::wifiMac read loop start");
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
                 oss << buffer;
         }
+		LOGINFO("DeviceInfo::WifiMac read loop done lines=%d bytes=%zu", lines, oss.str().size());
         int rc = v_secure_pclose(fp);
 		auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
         LOGINFO("DeviceInfo::WifiMac pclose rc=%d elapsedMs=%lld", rc, (long long)ms);
