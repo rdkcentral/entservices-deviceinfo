@@ -411,7 +411,7 @@ namespace Plugin {
         if (!stbMac.estbMac.empty() && stbMac.estbMac.back() == '\n') {
                 stbMac.estbMac.pop_back();
         }
-        LOGINFO(" estbMac value:%s ", stbMac.estbMac);
+        LOGINFO(" return Success");
         return Core::ERROR_NONE;
     }
  
@@ -437,7 +437,7 @@ namespace Plugin {
         if (!wiFiMac.wifiMac.empty() && wiFiMac.wifiMac.back() == '\n') {
                 wiFiMac.wifiMac.pop_back();
         }
-        LOGINFO(" wifiMac value:%s ", wiFiMac.wifiMac);
+        LOGINFO(" return Success");
         return Core::ERROR_NONE;
     }
 
