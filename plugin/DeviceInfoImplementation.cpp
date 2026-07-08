@@ -420,6 +420,7 @@ namespace Plugin {
 		LOGINFO("calling /lib/rdk/getDeviceDetails.sh read wifi_mac ");
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read wifi_mac");
         if (!fp) {
+			    LOGINFO(" Failed v_secure_popen ");
                 return Core::ERROR_GENERAL;
         }
         LOGINFO(" v_secure_popen success ");
