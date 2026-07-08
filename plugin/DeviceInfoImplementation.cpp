@@ -391,11 +391,13 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::EstbMac(StbMac& stbMac) const
     {
+		LOGINFO("calling /lib/rdk/getDeviceDetails.sh read estb_mac ");
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read estb_mac");
         if (!fp) {
+			    LOGINFO(" Failed v_secure_popen ");
                 return Core::ERROR_GENERAL;
         }
-
+        LOGINFO(" v_secure_popen success ");
         std::ostringstream oss;
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
@@ -404,22 +406,23 @@ namespace Plugin {
         v_secure_pclose(fp);
 
         stbMac.estbMac = oss.str();
-
+		
         // Remove trailing newline if present
         if (!stbMac.estbMac.empty() && stbMac.estbMac.back() == '\n') {
                 stbMac.estbMac.pop_back();
         }
-
+        LOGINFO(" estbMac value:%s ", stbMac.estbMac);
         return Core::ERROR_NONE;
     }
  
     Core::hresult DeviceInfoImplementation::WifiMac(WiFiMac& wiFiMac) const
     {
+		LOGINFO("calling /lib/rdk/getDeviceDetails.sh read wifi_mac ");
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read wifi_mac");
         if (!fp) {
                 return Core::ERROR_GENERAL;
         }
-
+        LOGINFO(" v_secure_popen success ");
         std::ostringstream oss;
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
@@ -433,7 +436,7 @@ namespace Plugin {
         if (!wiFiMac.wifiMac.empty() && wiFiMac.wifiMac.back() == '\n') {
                 wiFiMac.wifiMac.pop_back();
         }
-
+        LOGINFO(" wifiMac value:%s ", wiFiMac.wifiMac);
         return Core::ERROR_NONE;
     }
 
