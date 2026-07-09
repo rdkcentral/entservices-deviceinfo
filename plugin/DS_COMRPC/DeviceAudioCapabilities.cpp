@@ -78,14 +78,15 @@ namespace Plugin {
             // Port not found: report no capabilities rather than an error
             list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::AUDIOCAPABILITY_NONE);
         } else {
-            auto* audio = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsAudio>();
-            if (!audio) {
-                LOGERR("AudioCapabilities: IDeviceSettingsAudio interface not available");
-                return Core::ERROR_UNAVAILABLE;
-            }
-            int32_t handle = INVALID_DS_HANDLE;
-            result = audio->GetAudioPort(portEntry->type, portEntry->index, handle);
-            if (result == Core::ERROR_NONE) {
+            int32_t handle = getCachedAudioPortHandle(portEntry->name);
+            if (handle == INVALID_DS_HANDLE) {
+                list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::AUDIOCAPABILITY_NONE);
+            } else {
+                auto* audio = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsAudio>();
+                if (!audio) {
+                    LOGERR("AudioCapabilities: IDeviceSettingsAudio interface not available");
+                    return Core::ERROR_UNAVAILABLE;
+                }
                 int32_t caps = 0;
                 result = audio->GetAudioCapabilities(handle, caps);
                 if (result == Core::ERROR_NONE) {
@@ -104,11 +105,8 @@ namespace Plugin {
                     if (caps & Exchange::IDeviceSettingsAudio::AUDIO_CAPS_MS12)
                         list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::MS12);
                 }
-            } else {
-                list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::AUDIOCAPABILITY_NONE);
-                result = Core::ERROR_NONE;
+                audio->Release();
             }
-            audio->Release();
         }
 
         if (result == Core::ERROR_NONE) {
@@ -141,14 +139,15 @@ namespace Plugin {
         if (portEntry == nullptr) {
             list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::MS12CAPABILITY_NONE);
         } else {
-            auto* audio = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsAudio>();
-            if (!audio) {
-                LOGERR("MS12Capabilities: IDeviceSettingsAudio interface not available");
-                return Core::ERROR_UNAVAILABLE;
-            }
-            int32_t handle = INVALID_DS_HANDLE;
-            result = audio->GetAudioPort(portEntry->type, portEntry->index, handle);
-            if (result == Core::ERROR_NONE) {
+            int32_t handle = getCachedAudioPortHandle(portEntry->name);
+            if (handle == INVALID_DS_HANDLE) {
+                list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::MS12CAPABILITY_NONE);
+            } else {
+                auto* audio = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsAudio>();
+                if (!audio) {
+                    LOGERR("MS12Capabilities: IDeviceSettingsAudio interface not available");
+                    return Core::ERROR_UNAVAILABLE;
+                }
                 int32_t caps = 0;
                 result = audio->GetAudioMS12Capabilities(handle, caps);
                 if (result == Core::ERROR_NONE) {
@@ -161,11 +160,8 @@ namespace Plugin {
                     if (caps & Exchange::IDeviceSettingsAudio::AUDIO_MS12_CAPABILITIES_DIALOG_ENHANCER)
                         list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::DIALOGUEENHANCER);
                 }
-            } else {
-                list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::MS12CAPABILITY_NONE);
-                result = Core::ERROR_NONE;
+                audio->Release();
             }
-            audio->Release();
         }
 
         if (result == Core::ERROR_NONE) {
@@ -198,14 +194,15 @@ namespace Plugin {
         if (portEntry == nullptr) {
             result = Core::ERROR_NONE; // Port not found — return empty list without error
         } else {
-            auto* audio = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsAudio>();
-            if (!audio) {
-                LOGERR("SupportedMS12AudioProfiles: IDeviceSettingsAudio interface not available");
-                return Core::ERROR_UNAVAILABLE;
-            }
-            int32_t handle = INVALID_DS_HANDLE;
-            result = audio->GetAudioPort(portEntry->type, portEntry->index, handle);
-            if (result == Core::ERROR_NONE) {
+            int32_t handle = getCachedAudioPortHandle(portEntry->name);
+            if (handle == INVALID_DS_HANDLE) {
+                result = Core::ERROR_NONE; // Port handle not available — return empty list
+            } else {
+                auto* audio = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsAudio>();
+                if (!audio) {
+                    LOGERR("SupportedMS12AudioProfiles: IDeviceSettingsAudio interface not available");
+                    return Core::ERROR_UNAVAILABLE;
+                }
                 Exchange::IDeviceSettingsAudio::IDeviceSettingsAudioMS12AudioProfileIterator* profileIter = nullptr;
                 result = audio->GetAudioMS12ProfileList(handle, profileIter);
                 if (result == Core::ERROR_NONE && profileIter != nullptr) {
@@ -215,10 +212,8 @@ namespace Plugin {
                     }
                     profileIter->Release();
                 }
-            } else {
-                result = Core::ERROR_NONE; // Port handle not resolved — return empty list
+                audio->Release();
             }
-            audio->Release();
         }
 
         if (result == Core::ERROR_NONE) {
