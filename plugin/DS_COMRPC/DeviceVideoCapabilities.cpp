@@ -69,7 +69,7 @@ namespace Plugin {
             return Core::ERROR_UNAVAILABLE;
         }
         std::vector<VideoPortEntry> entries;
-        _vpConfigStore.BuildVideoPortEntries(entries);
+        _vpConfigStore.getVideoPortEntries(entries);
         for (size_t i = 0; i < entries.size(); ++i) {
             const string& name = entries[i].name;
             if (std::find(list.begin(), list.end(), name) == list.end()) {
