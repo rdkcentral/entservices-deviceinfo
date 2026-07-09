@@ -27,7 +27,7 @@ namespace Plugin {
     void DeviceAudioCapabilities::OnDeviceSettingsActivated()
     {
         LOGINFO("DeviceSettingsActivated: loading audio port config");
-        if (!LoadAudioConfig(_audioConfig)) {
+        if (!LoadAudioConfig(_audioConfigStore)) {
             LOGERR("OnDeviceSettingsActivated: failed to load audio config");
         }
     }
@@ -35,7 +35,7 @@ namespace Plugin {
     void DeviceAudioCapabilities::OnDeviceSettingsDeactivated()
     {
         LOGINFO("DeviceSettingsDeactivated: clearing audio port config");
-        _audioConfig.Clear();
+        _audioConfigStore.Clear();
     }
 
     SERVICE_REGISTRATION(DeviceAudioCapabilities, 1, 0);
@@ -62,12 +62,12 @@ namespace Plugin {
         std::list<Exchange::IDeviceAudioCapabilities::AudioCapability> list;
 
         // Resolve port from cached config — no per-call GetAudioConfig() round-trip
-        if (_audioConfig.IsEmpty()) {
+        if (_audioConfigStore.IsEmpty()) {
             LOGERR("AudioCapabilities: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
         std::vector<AudioPortEntry> entries;
-        _audioConfig.getAudioPortEntries(entries);
+        _audioConfigStore.getAudioPortEntries(entries);
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
             if (audioPort.empty() || entries[i].name == audioPort) {
@@ -83,7 +83,7 @@ namespace Plugin {
                 LOGERR("AudioCapabilities: IDeviceSettingsAudio interface not available");
                 return Core::ERROR_UNAVAILABLE;
             }
-            int32_t handle = -1;
+            int32_t handle = INVALID_DS_HANDLE;
             result = audio->GetAudioPort(portEntry->type, portEntry->index, handle);
             if (result == Core::ERROR_NONE) {
                 int32_t caps = 0;
@@ -126,12 +126,12 @@ namespace Plugin {
         std::list<Exchange::IDeviceAudioCapabilities::MS12Capability> list;
 
         // Resolve port from cached config — no per-call GetAudioConfig() round-trip
-        if (_audioConfig.IsEmpty()) {
+        if (_audioConfigStore.IsEmpty()) {
             LOGERR("MS12Capabilities: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
         std::vector<AudioPortEntry> entries;
-        _audioConfig.getAudioPortEntries(entries);
+        _audioConfigStore.getAudioPortEntries(entries);
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
             if (audioPort.empty() || entries[i].name == audioPort) {
@@ -146,7 +146,7 @@ namespace Plugin {
                 LOGERR("MS12Capabilities: IDeviceSettingsAudio interface not available");
                 return Core::ERROR_UNAVAILABLE;
             }
-            int32_t handle = -1;
+            int32_t handle = INVALID_DS_HANDLE;
             result = audio->GetAudioPort(portEntry->type, portEntry->index, handle);
             if (result == Core::ERROR_NONE) {
                 int32_t caps = 0;
@@ -183,12 +183,12 @@ namespace Plugin {
         std::list<string> list;
 
         // Resolve port from cached config — no per-call GetAudioConfig() round-trip
-        if (_audioConfig.IsEmpty()) {
+        if (_audioConfigStore.IsEmpty()) {
             LOGERR("SupportedMS12AudioProfiles: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
         std::vector<AudioPortEntry> entries;
-        _audioConfig.getAudioPortEntries(entries);
+        _audioConfigStore.getAudioPortEntries(entries);
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
             if (audioPort.empty() || entries[i].name == audioPort) {
@@ -203,7 +203,7 @@ namespace Plugin {
                 LOGERR("SupportedMS12AudioProfiles: IDeviceSettingsAudio interface not available");
                 return Core::ERROR_UNAVAILABLE;
             }
-            int32_t handle = -1;
+            int32_t handle = INVALID_DS_HANDLE;
             result = audio->GetAudioPort(portEntry->type, portEntry->index, handle);
             if (result == Core::ERROR_NONE) {
                 Exchange::IDeviceSettingsAudio::IDeviceSettingsAudioMS12AudioProfileIterator* profileIter = nullptr;

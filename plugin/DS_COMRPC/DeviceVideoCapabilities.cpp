@@ -29,7 +29,7 @@ namespace Plugin {
     void DeviceVideoCapabilities::OnDeviceSettingsActivated()
     {
         LOGINFO("DeviceSettingsActivated: loading video port config");
-        if (!LoadVideoPortConfig(_videoPortConfig)) {
+        if (!LoadVideoPortConfig(_vpConfigStore)) {
             LOGERR("OnDeviceSettingsActivated: failed to load video port config");
         }
     }
@@ -37,7 +37,7 @@ namespace Plugin {
     void DeviceVideoCapabilities::OnDeviceSettingsDeactivated()
     {
         LOGINFO("DeviceSettingsDeactivated: clearing video port config");
-        _videoPortConfig.Clear();
+        _vpConfigStore.Clear();
     }
 
     SERVICE_REGISTRATION(DeviceVideoCapabilities, 1, 0);
@@ -64,12 +64,12 @@ namespace Plugin {
         std::list<string> list;
 
         // Read from cached config — no COM-RPC round-trip needed for static port enumeration
-        if (_videoPortConfig.IsEmpty()) {
+        if (_vpConfigStore.IsEmpty()) {
             LOGERR("SupportedVideoDisplays: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
         std::vector<VideoPortEntry> entries;
-        _videoPortConfig.BuildVideoPortEntries(entries);
+        _vpConfigStore.BuildVideoPortEntries(entries);
         for (size_t i = 0; i < entries.size(); ++i) {
             const string& name = entries[i].name;
             if (std::find(list.begin(), list.end(), name) == list.end()) {
@@ -128,12 +128,12 @@ namespace Plugin {
         uint32_t result = Core::ERROR_NONE;
 
         // Read from cached config — no COM-RPC round-trip needed
-        if (_videoPortConfig.IsEmpty()) {
+        if (_vpConfigStore.IsEmpty()) {
             LOGERR("DefaultResolution: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
-        const string portName = videoDisplay.empty() ? _videoPortConfig.GetDefaultVideoPortName() : videoDisplay;
-        const string res = _videoPortConfig.GetDefaultResolution(portName);
+        const string portName = videoDisplay.empty() ? _vpConfigStore.GetDefaultVideoPortName() : videoDisplay;
+        const string res = _vpConfigStore.GetDefaultResolution(portName);
         if (res.empty()) {
             result = Core::ERROR_NOT_EXIST;
         } else {
@@ -150,17 +150,17 @@ namespace Plugin {
         std::list<string> list;
 
         // Read from cached config — no COM-RPC round-trip needed
-        if (_videoPortConfig.IsEmpty()) {
+        if (_vpConfigStore.IsEmpty()) {
             LOGERR("SupportedResolutions: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
-        const string portName = videoDisplay.empty() ? _videoPortConfig.GetDefaultVideoPortName() : videoDisplay;
+        const string portName = videoDisplay.empty() ? _vpConfigStore.GetDefaultVideoPortName() : videoDisplay;
         VideoPortEntry resolvedEntry;
-        if (!_videoPortConfig.ResolveByName(portName, resolvedEntry)) {
+        if (!_vpConfigStore.ResolveByName(portName, resolvedEntry)) {
             result = Core::ERROR_NOT_EXIST;
         } else {
             VideoPortTypeConfig typeConfig;
-            if (_videoPortConfig.GetTypeConfig(resolvedEntry.type, typeConfig)) {
+            if (_vpConfigStore.GetTypeConfig(resolvedEntry.type, typeConfig)) {
                 // Parse comma-separated list of supported resolution names
                 std::istringstream ss(typeConfig.supportedResolutionNames);
                 string token;
@@ -185,13 +185,13 @@ namespace Plugin {
         uint32_t result = Core::ERROR_NONE;
 
         // Use cached config for port name resolution — only HDCP version query needs COM-RPC
-        if (_videoPortConfig.IsEmpty()) {
+        if (_vpConfigStore.IsEmpty()) {
             LOGERR("SupportedHdcp: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
-        const string portName = videoDisplay.empty() ? _videoPortConfig.GetDefaultVideoPortName() : videoDisplay;
+        const string portName = videoDisplay.empty() ? _vpConfigStore.GetDefaultVideoPortName() : videoDisplay;
         VideoPortEntry resolvedEntry;
-        if (!_videoPortConfig.ResolveByName(portName, resolvedEntry)) {
+        if (!_vpConfigStore.ResolveByName(portName, resolvedEntry)) {
             return Core::ERROR_NOT_EXIST;
         }
         auto* vp = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsVideoPort>();
@@ -199,7 +199,7 @@ namespace Plugin {
             LOGERR("SupportedHdcp: IDeviceSettingsVideoPort interface not available");
             return Core::ERROR_UNAVAILABLE;
         }
-        int32_t handle = -1;
+        int32_t handle = INVALID_DS_HANDLE;
         result = vp->GetVideoPort(resolvedEntry.type, resolvedEntry.index, handle);
         if (result == Core::ERROR_NONE) {
             Exchange::IDeviceSettingsVideoPort::HDCPProtocolVersion version;

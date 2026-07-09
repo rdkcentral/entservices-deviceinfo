@@ -62,9 +62,7 @@ namespace Plugin {
             return const_cast<DeviceVideoCapabilities*>(this)->AcquireSubInterface<T>();
         }
 
-        // Video port config is loaded once in OnDeviceSettingsActivated and cleared on deactivation.
-        // Static queries (port names, default resolution, supported resolutions) use the cache.
-        mutable VideoPortConfigStore _videoPortConfig;
+        // _vpConfigStore is inherited from DeviceSettingsClientHelper (base class)
 
     protected:
         void OnDeviceSettingsActivated() override;
