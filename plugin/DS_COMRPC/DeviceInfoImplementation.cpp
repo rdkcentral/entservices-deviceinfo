@@ -127,7 +127,7 @@ namespace Plugin {
     void DeviceInfoImplementation::OnDeviceSettingsActivated()
     {
         LOGINFO("DeviceSettingsActivated: loading audio port config");
-        if (!LoadAudioConfig(_audioConfig)) {
+        if (!LoadAudioConfig(_audioConfigStore)) {
             LOGERR("OnDeviceSettingsActivated: failed to load audio config");
         }
     }
@@ -135,7 +135,7 @@ namespace Plugin {
     void DeviceInfoImplementation::OnDeviceSettingsDeactivated()
     {
         LOGINFO("DeviceSettingsDeactivated: clearing audio port config");
-        _audioConfig.Clear();
+        _audioConfigStore.Clear();
     }
 
     Core::hresult DeviceInfoImplementation::SerialNumber(DeviceSerialNo& deviceSerialNo) const
@@ -493,12 +493,12 @@ namespace Plugin {
         std::list<string> list;
 
         // Read from cached audio config — no COM-RPC round-trip needed
-        if (_audioConfig.IsEmpty()) {
+        if (_audioConfigStore.IsEmpty()) {
             LOGERR("SupportedAudioPorts: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
         std::vector<AudioPortEntry> entries;
-        _audioConfig.getAudioPortEntries(entries);
+        _audioConfigStore.getAudioPortEntries(entries);
         for (size_t i = 0; i < entries.size(); ++i) {
             list.emplace_back(entries[i].name);
         }

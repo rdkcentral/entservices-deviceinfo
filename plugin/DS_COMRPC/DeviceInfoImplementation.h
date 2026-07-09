@@ -89,9 +89,7 @@ namespace Plugin {
             return const_cast<DeviceInfoImplementation*>(this)->AcquireSubInterface<T>();
         }
 
-        // Audio config is loaded once in OnDeviceSettingsActivated and cleared on deactivation.
-        // SupportedAudioPorts reads from cache — no COM-RPC round-trip per call.
-        mutable AudioConfigStore _audioConfig;
+        // _audioConfigStore is inherited from DeviceSettingsClientHelper (base class)
 
     protected:
         // DeviceSettingsClientHelper lifecycle callbacks.
