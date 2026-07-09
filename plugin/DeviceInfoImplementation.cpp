@@ -397,13 +397,16 @@ namespace Plugin {
 			    LOGINFO(" Failed v_secure_popen ");
                 return Core::ERROR_GENERAL;
         }
-        LOGINFO(" v_secure_popen success ");
+        LOGINFO(" v_secure_popen estb_mac success ");
         std::ostringstream oss;
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
+			    LOGINFO("EstbMac: got output chunk");
                 oss << buffer;
         }
+		LOGINFO("EstbMac: before pclose");
         v_secure_pclose(fp);
+		LOGINFO("EstbMac: after pclose");
 
         stbMac.estbMac = oss.str();
 		
@@ -411,7 +414,7 @@ namespace Plugin {
         if (!stbMac.estbMac.empty() && stbMac.estbMac.back() == '\n') {
                 stbMac.estbMac.pop_back();
         }
-        LOGINFO(" return Success");
+        LOGINFO(" return estb_mac Success");
         return Core::ERROR_NONE;
     }
  
@@ -420,16 +423,19 @@ namespace Plugin {
 		LOGINFO("calling /lib/rdk/getDeviceDetails.sh read wifi_mac ");
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read wifi_mac");
         if (!fp) {
-			    LOGINFO(" Failed v_secure_popen ");
+			    LOGINFO(" Failed wifi_mac v_secure_popen ");
                 return Core::ERROR_GENERAL;
         }
-        LOGINFO(" v_secure_popen success ");
+        LOGINFO(" v_secure_popen wifi_mac success ");
         std::ostringstream oss;
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
+			    LOGINFO("WifiMac: got output chunk");
                 oss << buffer;
         }
+		LOGINFO("WifiMac: before pclose");
         v_secure_pclose(fp);
+		LOGINFO("WifiMac: after pclose");
 
         wiFiMac.wifiMac = oss.str();
  
@@ -437,33 +443,35 @@ namespace Plugin {
         if (!wiFiMac.wifiMac.empty() && wiFiMac.wifiMac.back() == '\n') {
                 wiFiMac.wifiMac.pop_back();
         }
-        LOGINFO(" return Success");
+        LOGINFO(" return wifi_mac Success");
         return Core::ERROR_NONE;
     }
 
     Core::hresult DeviceInfoImplementation::EstbIp(StbIp& stbIp) const
     {
-		LOGINFO("calling /lib/rdk/getDeviceDetails.sh read test ");
-        FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read test");
+		LOGINFO("calling /lib/rdk/getDeviceDetails.sh read estb_ip ");
+        FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read estb_ip");
         if (!fp) {
-			    LOGINFO(" Failed v_secure_popen ");
+			    LOGINFO(" Failed estb_ip v_secure_popen ");
                 return Core::ERROR_GENERAL;
         }
-        LOGINFO(" v_secure_popen success ");
+        LOGINFO(" v_secure_popen estb_ip success ");
         std::ostringstream oss;
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
                 oss << buffer;
         }
+		LOGINFO("EstbIp: before pclose");
         v_secure_pclose(fp);
-
+        LOGINFO("EstbIp: after pclose");
+		
         stbIp.estbIp = oss.str();
 
         // Remove trailing newline if present
         if (!stbIp.estbIp.empty() && stbIp.estbIp.back() == '\n') {
                 stbIp.estbIp.pop_back();
         }
-        LOGINFO(" return Success");
+        LOGINFO(" return estb_ip Success");
         return Core::ERROR_NONE;
     }
 
