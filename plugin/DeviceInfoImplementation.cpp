@@ -443,11 +443,13 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::EstbIp(StbIp& stbIp) const
     {
-        FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read estb_ip");
+		LOGINFO("calling /lib/rdk/getDeviceDetails.sh read test ");
+        FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read test");
         if (!fp) {
+			    LOGINFO(" Failed v_secure_popen ");
                 return Core::ERROR_GENERAL;
         }
-
+        LOGINFO(" v_secure_popen success ");
         std::ostringstream oss;
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
@@ -461,7 +463,7 @@ namespace Plugin {
         if (!stbIp.estbIp.empty() && stbIp.estbIp.back() == '\n') {
                 stbIp.estbIp.pop_back();
         }
-
+        LOGINFO(" return Success");
         return Core::ERROR_NONE;
     }
 
