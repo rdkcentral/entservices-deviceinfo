@@ -185,9 +185,22 @@ namespace Plugin {
         }
         std::vector<AudioPortEntry> entries;
         _audioConfigStore.getAudioPortEntries(entries);
+        // When audioPort is empty, resolve the platform default using GetDefaultAudioPortName().
+        // This mirrors DS_IARM's device::Host::getInstance().getDefaultAudioPortName() which:
+        //   - Returns "HDMI0"    on STB (HDMI audio output exists → matched first)
+        //   - Returns "SPEAKER0" on TV  (no "HDMI0" port — TVs only have "HDMI_ARC0" — so
+        //                                "SPEAKER0" is matched first)
+        // "HDMI_ARC0".find("HDMI0") == npos because "_" follows "HDMI", not "0".
+        const std::string resolvedPort = audioPort.empty()
+            ? _audioConfigStore.GetDefaultAudioPortName()
+            : audioPort;
+        if (audioPort.empty()) {
+            LOGINFO("SupportedMS12AudioProfiles: audioPort empty — resolved default to '%s'",
+                    resolvedPort.c_str());
+        }
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
-            if (audioPort.empty() || entries[i].name == audioPort) {
+            if (entries[i].name == resolvedPort) {
                 portEntry = &entries[i];
             }
         }
