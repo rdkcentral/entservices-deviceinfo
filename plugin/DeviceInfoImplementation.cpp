@@ -403,6 +403,12 @@ namespace Plugin {
     Core::hresult DeviceInfoImplementation::EstbMac(StbMac& stbMac) const
     {
 		LOGINFO("calling /lib/rdk/getDeviceDetails.sh read estb_mac ");
+		static std::atomic<int> _call_n{0};
+        if (_call_n.fetch_add(1) % 2 == 0) {
+            flockfile(stdout);
+            usleep(500000); // hold 500ms — second concurrent call forks within this window
+            funlockfile(stdout);
+        }
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read estb_mac");
         if (!fp) {
 			    LOGINFO(" Failed v_secure_popen ");
@@ -432,7 +438,9 @@ namespace Plugin {
     Core::hresult DeviceInfoImplementation::WifiMac(WiFiMac& wiFiMac) const
     {
 		LOGINFO("calling /lib/rdk/getDeviceDetails.sh read wifi_mac ");
+		flockfile(stdout); // lock acquired in parent; child will inherit this locked
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read wifi_mac");
+		funlockfile(stdout); // release in parent after fork; child is already deadlocked
         if (!fp) {
 			    LOGINFO(" Failed wifi_mac v_secure_popen ");
                 return Core::ERROR_GENERAL;
