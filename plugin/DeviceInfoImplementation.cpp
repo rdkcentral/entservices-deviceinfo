@@ -367,6 +367,17 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::EthMac(EthernetMac& ethernetMac) const
     {
+		// TEMPORARY: Hold stdout FILE lock across fork() to guarantee deadlock on uclibc.
+        // Thread 1 acquires the lock and holds it 500ms.
+        // Thread 2 forks via v_secure_popen while the lock is held.
+        // Child inherits stdout locked -> fflush(stdout) in child deadlocks on uclibc.
+        static std::atomic<int> _call_n{0};
+        if (_call_n.fetch_add(1) % 2 == 0) {
+            flockfile(stdout);
+            usleep(500000); // hold 500ms — second concurrent call forks within this window
+            funlockfile(stdout);
+        }
+		
         FILE* fp = v_secure_popen("r", "/lib/rdk/getDeviceDetails.sh read eth_mac");
         if (!fp) {
             return Core::ERROR_GENERAL;
