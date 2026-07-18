@@ -28,14 +28,14 @@
 #include <com/com.h>
 #include <core/core.h>
 
-#include "DeviceSettingsClientHelper.h"
+#include "DeviceSettingsInterface.h"
 
 namespace WPEFramework {
 namespace Plugin {
     class DeviceInfoImplementation
         : public Exchange::IDeviceInfo
         , public Exchange::IConfiguration
-        , public DeviceSettingsClientHelper
+        , public DSHelper
     {
     public:
         // We do not allow this plugin to be copied !!
@@ -85,10 +85,8 @@ namespace Plugin {
             return const_cast<DeviceInfoImplementation*>(this)->AcquireSubInterface<T>();
         }
 
-        // _audioConfigStore is inherited from DeviceSettingsClientHelper (base class)
-
     protected:
-        // DeviceSettingsClientHelper lifecycle callbacks.
+        // DSHelper lifecycle callbacks.
         void OnDeviceSettingsActivated() override;
         void OnDeviceSettingsDeactivated() override;
     };

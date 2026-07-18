@@ -25,7 +25,7 @@
 #include "mfrMgr.h"
 #include <unordered_map>
 
-#include "DeviceSettingsClientHelper.h"
+#include "DeviceSettingsInterface.h"
 
 #include <fstream>
 #include <regex>
@@ -103,7 +103,7 @@ namespace Plugin {
     {
         LOGINFO("DeviceInfoImplementation destructor");
         // Close COM-RPC link BEFORE releasing _service reference.
-        DeviceSettingsClientHelper::Close();
+        DSHelper::Close();
         if (_service != nullptr)
         {
             _service->Release();
@@ -120,22 +120,21 @@ namespace Plugin {
 
         // Open a single COM-RPC link to DeviceSettings (root IDeviceSettings).
         // Sub-interfaces are acquired on demand via AcquireSubInterface<T>().
-        DeviceSettingsClientHelper::Open(service);
+        DSHelper::Open(service);
         return Core::ERROR_NONE;
     }
 
     void DeviceInfoImplementation::OnDeviceSettingsActivated()
     {
-        LOGINFO("DeviceSettingsActivated: loading audio port config");
-        if (!LoadAudioConfig(_audioConfigStore)) {
-            LOGERR("OnDeviceSettingsActivated: failed to load audio config");
-        }
+        // Config is loaded lazily by DSHelper::_ensureConfigLoaded() on the first
+        // accessor call. No explicit load needed here.
+        LOGINFO("DeviceInfoImplementation: DeviceSettings activated");
     }
 
     void DeviceInfoImplementation::OnDeviceSettingsDeactivated()
     {
-        LOGINFO("DeviceSettingsDeactivated: clearing audio port config");
-        _audioConfigStore.Clear();
+        // DSHelper::Operational(false) already clears all config stores and handles.
+        LOGINFO("DeviceInfoImplementation: DeviceSettings deactivated");
     }
 
     Core::hresult DeviceInfoImplementation::SerialNumber(DeviceSerialNo& deviceSerialNo) const
@@ -478,13 +477,12 @@ namespace Plugin {
 
         std::list<string> list;
 
-        // Read from cached audio config — no COM-RPC round-trip needed
-        if (_audioConfigStore.IsEmpty()) {
+        // Read from cached audio config via DSHelper — no COM-RPC round-trip needed
+        std::vector<AudioPortEntry> entries;
+        if (!DSHelper::getAudioPortEntries(entries)) {
             LOGERR("SupportedAudioPorts: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
-        std::vector<AudioPortEntry> entries;
-        _audioConfigStore.getAudioPortEntries(entries);
         for (size_t i = 0; i < entries.size(); ++i) {
             list.emplace_back(entries[i].name);
         }
