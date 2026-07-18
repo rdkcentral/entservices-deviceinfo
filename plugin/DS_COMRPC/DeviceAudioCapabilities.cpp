@@ -19,23 +19,22 @@
 
 #include "DeviceAudioCapabilities.h"
 
-#include "DeviceSettingsClientHelper.h"
+#include "DeviceSettingsInterface.h"
 
 namespace WPEFramework {
 namespace Plugin {
 
     void DeviceAudioCapabilities::OnDeviceSettingsActivated()
     {
-        LOGINFO("DeviceSettingsActivated: loading audio port config");
-        if (!LoadAudioConfig(_audioConfigStore)) {
-            LOGERR("OnDeviceSettingsActivated: failed to load audio config");
-        }
+        // Config is loaded lazily by DSHelper::_ensureConfigLoaded() on the first
+        // accessor call. No explicit load needed here.
+        LOGINFO("DeviceAudioCapabilities: DeviceSettings activated");
     }
 
     void DeviceAudioCapabilities::OnDeviceSettingsDeactivated()
     {
-        LOGINFO("DeviceSettingsDeactivated: clearing audio port config");
-        _audioConfigStore.Clear();
+        // DSHelper::Operational(false) already clears all config stores and handles.
+        LOGINFO("DeviceAudioCapabilities: DeviceSettings deactivated");
     }
 
     SERVICE_REGISTRATION(DeviceAudioCapabilities, 1, 0);
@@ -46,12 +45,12 @@ namespace Plugin {
 
     DeviceAudioCapabilities::~DeviceAudioCapabilities()
     {
-        DeviceSettingsClientHelper::Close();
+        DSHelper::Close();
     }
 
     uint32_t DeviceAudioCapabilities::Configure(PluginHost::IShell* service)
     {
-        DeviceSettingsClientHelper::Open(service);
+        DSHelper::Open(service);
         return Core::ERROR_NONE;
     }
 
@@ -61,13 +60,12 @@ namespace Plugin {
 
         std::list<Exchange::IDeviceAudioCapabilities::AudioCapability> list;
 
-        // Resolve port from cached config — no per-call GetAudioConfig() round-trip
-        if (_audioConfigStore.IsEmpty()) {
+        // Resolve port from cached config via DSHelper — no per-call GetAudioConfig() round-trip
+        std::vector<AudioPortEntry> entries;
+        if (!DSHelper::getAudioPortEntries(entries)) {
             LOGERR("AudioCapabilities: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
-        std::vector<AudioPortEntry> entries;
-        _audioConfigStore.getAudioPortEntries(entries);
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
             if (audioPort.empty() || entries[i].name == audioPort) {
@@ -78,7 +76,7 @@ namespace Plugin {
             // Port not found: report no capabilities rather than an error
             list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::AUDIOCAPABILITY_NONE);
         } else {
-            int32_t handle = getCachedAudioPortHandle(portEntry->name);
+            int32_t handle = DSHelper::getCachedAudioPortHandle(portEntry->name);
             if (handle == INVALID_DS_HANDLE) {
                 list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::AUDIOCAPABILITY_NONE);
             } else {
@@ -123,13 +121,12 @@ namespace Plugin {
 
         std::list<Exchange::IDeviceAudioCapabilities::MS12Capability> list;
 
-        // Resolve port from cached config — no per-call GetAudioConfig() round-trip
-        if (_audioConfigStore.IsEmpty()) {
+        // Resolve port from cached config via DSHelper — no per-call GetAudioConfig() round-trip
+        std::vector<AudioPortEntry> entries;
+        if (!DSHelper::getAudioPortEntries(entries)) {
             LOGERR("MS12Capabilities: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
-        std::vector<AudioPortEntry> entries;
-        _audioConfigStore.getAudioPortEntries(entries);
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
             if (audioPort.empty() || entries[i].name == audioPort) {
@@ -139,7 +136,7 @@ namespace Plugin {
         if (portEntry == nullptr) {
             list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::MS12CAPABILITY_NONE);
         } else {
-            int32_t handle = getCachedAudioPortHandle(portEntry->name);
+            int32_t handle = DSHelper::getCachedAudioPortHandle(portEntry->name);
             if (handle == INVALID_DS_HANDLE) {
                 list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::MS12CAPABILITY_NONE);
             } else {
@@ -178,21 +175,20 @@ namespace Plugin {
 
         std::list<string> list;
 
-        // Resolve port from cached config — no per-call GetAudioConfig() round-trip
-        if (_audioConfigStore.IsEmpty()) {
+        // Resolve port from cached config via DSHelper — no per-call GetAudioConfig() round-trip
+        std::vector<AudioPortEntry> entries;
+        if (!DSHelper::getAudioPortEntries(entries)) {
             LOGERR("SupportedMS12AudioProfiles: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
-        std::vector<AudioPortEntry> entries;
-        _audioConfigStore.getAudioPortEntries(entries);
-        // When audioPort is empty, resolve the platform default using GetDefaultAudioPortName().
+        // When audioPort is empty, resolve the platform default using DSHelper::getDefaultAudioPortName().
         // This mirrors DS_IARM's device::Host::getInstance().getDefaultAudioPortName() which:
         //   - Returns "HDMI0"    on STB (HDMI audio output exists → matched first)
         //   - Returns "SPEAKER0" on TV  (no "HDMI0" port — TVs only have "HDMI_ARC0" — so
         //                                "SPEAKER0" is matched first)
         // "HDMI_ARC0".find("HDMI0") == npos because "_" follows "HDMI", not "0".
         const std::string resolvedPort = audioPort.empty()
-            ? _audioConfigStore.GetDefaultAudioPortName()
+            ? DSHelper::getDefaultAudioPortName()
             : audioPort;
         if (audioPort.empty()) {
             LOGINFO("SupportedMS12AudioProfiles: audioPort empty — resolved default to '%s'",
@@ -207,7 +203,7 @@ namespace Plugin {
         if (portEntry == nullptr) {
             result = Core::ERROR_NONE; // Port not found — return empty list without error
         } else {
-            int32_t handle = getCachedAudioPortHandle(portEntry->name);
+            int32_t handle = DSHelper::getCachedAudioPortHandle(portEntry->name);
             if (handle == INVALID_DS_HANDLE) {
                 result = Core::ERROR_NONE; // Port handle not available — return empty list
             } else {

@@ -23,14 +23,14 @@
 #include <interfaces/IDeviceInfo.h>
 
 #include <interfaces/IConfiguration.h>
-#include "DeviceSettingsClientHelper.h"
+#include "DeviceSettingsInterface.h"
 
 namespace WPEFramework {
 namespace Plugin {
     class DeviceVideoCapabilities
         : public Exchange::IDeviceVideoCapabilities
         , public Exchange::IConfiguration
-        , public DeviceSettingsClientHelper
+        , public DSHelper
     {
     private:
         DeviceVideoCapabilities(const DeviceVideoCapabilities&) = delete;
@@ -61,8 +61,6 @@ namespace Plugin {
         T* AcquireSubInterfaceMutable() const {
             return const_cast<DeviceVideoCapabilities*>(this)->AcquireSubInterface<T>();
         }
-
-        // _vpConfigStore is inherited from DeviceSettingsClientHelper (base class)
 
     protected:
         void OnDeviceSettingsActivated() override;

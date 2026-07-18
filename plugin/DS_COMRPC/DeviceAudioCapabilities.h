@@ -23,14 +23,14 @@
 #include <interfaces/IDeviceInfo.h>
 
 #include <interfaces/IConfiguration.h>
-#include "DeviceSettingsClientHelper.h"
+#include "DeviceSettingsInterface.h"
 
 namespace WPEFramework {
 namespace Plugin {
     class DeviceAudioCapabilities
         : public Exchange::IDeviceAudioCapabilities
         , public Exchange::IConfiguration
-        , public DeviceSettingsClientHelper
+        , public DSHelper
     {
     private:
         DeviceAudioCapabilities(const DeviceAudioCapabilities&) = delete;
@@ -59,8 +59,6 @@ namespace Plugin {
         T* AcquireSubInterfaceMutable() const {
             return const_cast<DeviceAudioCapabilities*>(this)->AcquireSubInterface<T>();
         }
-
-        // _audioConfigStore is inherited from DeviceSettingsClientHelper (base class)
 
     protected:
         void OnDeviceSettingsActivated() override;

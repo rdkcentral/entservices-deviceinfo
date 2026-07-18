@@ -19,7 +19,7 @@
 
 #include "DeviceVideoCapabilities.h"
 
-#include "DeviceSettingsClientHelper.h"
+#include "DeviceSettingsInterface.h"
 #include <interfaces/IDeviceSettingsHost.h>    // Exchange::IDeviceSettingsHost (GetEDID)
 #include <sstream>
 
@@ -28,16 +28,15 @@ namespace Plugin {
 
     void DeviceVideoCapabilities::OnDeviceSettingsActivated()
     {
-        LOGINFO("DeviceSettingsActivated: loading video port config");
-        if (!LoadVideoPortConfig(_vpConfigStore)) {
-            LOGERR("OnDeviceSettingsActivated: failed to load video port config");
-        }
+        // Config is loaded lazily by DSHelper::_ensureConfigLoaded() on the first
+        // accessor call. No explicit load needed here.
+        LOGINFO("DeviceVideoCapabilities: DeviceSettings activated");
     }
 
     void DeviceVideoCapabilities::OnDeviceSettingsDeactivated()
     {
-        LOGINFO("DeviceSettingsDeactivated: clearing video port config");
-        _vpConfigStore.Clear();
+        // DSHelper::Operational(false) already clears all config stores and handles.
+        LOGINFO("DeviceVideoCapabilities: DeviceSettings deactivated");
     }
 
     SERVICE_REGISTRATION(DeviceVideoCapabilities, 1, 0);
@@ -48,12 +47,12 @@ namespace Plugin {
 
     DeviceVideoCapabilities::~DeviceVideoCapabilities()
     {
-        DeviceSettingsClientHelper::Close();
+        DSHelper::Close();
     }
 
     uint32_t DeviceVideoCapabilities::Configure(PluginHost::IShell* service)
     {
-        DeviceSettingsClientHelper::Open(service);
+        DSHelper::Open(service);
         return Core::ERROR_NONE;
     }
 
@@ -63,13 +62,12 @@ namespace Plugin {
 
         std::list<string> list;
 
-        // Read from cached config — no COM-RPC round-trip needed for static port enumeration
-        if (_vpConfigStore.IsEmpty()) {
+        // Read from cached config via DSHelper — no COM-RPC round-trip needed for static port enumeration
+        std::vector<VideoPortEntry> entries;
+        if (!DSHelper::getVideoPortEntries(entries)) {
             LOGERR("SupportedVideoDisplays: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
-        std::vector<VideoPortEntry> entries;
-        _vpConfigStore.getVideoPortEntries(entries);
         for (size_t i = 0; i < entries.size(); ++i) {
             const string& name = entries[i].name;
             if (std::find(list.begin(), list.end(), name) == list.end()) {
@@ -127,13 +125,9 @@ namespace Plugin {
     {
         uint32_t result = Core::ERROR_NONE;
 
-        // Read from cached config — no COM-RPC round-trip needed
-        if (_vpConfigStore.IsEmpty()) {
-            LOGERR("DefaultResolution: DeviceSettings config not available");
-            return Core::ERROR_UNAVAILABLE;
-        }
-        const string portName = videoDisplay.empty() ? _vpConfigStore.GetDefaultVideoPortName() : videoDisplay;
-        const string res = _vpConfigStore.GetDefaultResolution(portName);
+        // Read from cached config via DSHelper — no COM-RPC round-trip needed
+        const string portName = videoDisplay.empty() ? DSHelper::getDefaultVideoPortName() : videoDisplay;
+        const string res = DSHelper::getVideoPortDefaultResolution(portName);
         if (res.empty()) {
             result = Core::ERROR_NOT_EXIST;
         } else {
@@ -149,18 +143,14 @@ namespace Plugin {
 
         std::list<string> list;
 
-        // Read from cached config — no COM-RPC round-trip needed
-        if (_vpConfigStore.IsEmpty()) {
-            LOGERR("SupportedResolutions: DeviceSettings config not available");
-            return Core::ERROR_UNAVAILABLE;
-        }
-        const string portName = videoDisplay.empty() ? _vpConfigStore.GetDefaultVideoPortName() : videoDisplay;
+        // Read from cached config via DSHelper — no COM-RPC round-trip needed
+        const string portName = videoDisplay.empty() ? DSHelper::getDefaultVideoPortName() : videoDisplay;
         VideoPortEntry resolvedEntry;
-        if (!_vpConfigStore.ResolveByName(portName, resolvedEntry)) {
+        if (!DSHelper::resolveVideoPortByName(portName, resolvedEntry)) {
             result = Core::ERROR_NOT_EXIST;
         } else {
             VideoPortTypeConfig typeConfig;
-            if (_vpConfigStore.GetTypeConfig(resolvedEntry.type, typeConfig)) {
+            if (DSHelper::getVideoPortTypeConfig(resolvedEntry.type, typeConfig)) {
                 // Parse comma-separated list of supported resolution names
                 std::istringstream ss(typeConfig.supportedResolutionNames);
                 string token;
@@ -184,38 +174,36 @@ namespace Plugin {
     {
         uint32_t result = Core::ERROR_NONE;
 
-        // Use cached config for port name resolution — only HDCP version query needs COM-RPC
-        if (_vpConfigStore.IsEmpty()) {
-            LOGERR("SupportedHdcp: DeviceSettings config not available");
-            return Core::ERROR_UNAVAILABLE;
-        }
-        const string portName = videoDisplay.empty() ? _vpConfigStore.GetDefaultVideoPortName() : videoDisplay;
+        // Use cached config via DSHelper for port name resolution — only HDCP version query needs COM-RPC
+        const string portName = videoDisplay.empty() ? DSHelper::getDefaultVideoPortName() : videoDisplay;
         VideoPortEntry resolvedEntry;
-        if (!_vpConfigStore.ResolveByName(portName, resolvedEntry)) {
+        if (!DSHelper::resolveVideoPortByName(portName, resolvedEntry)) {
             return Core::ERROR_NOT_EXIST;
+        }
+        // Use the cached video port handle acquired during config loading
+        const int32_t handle = DSHelper::getCachedVideoPortHandle(resolvedEntry.name);
+        if (handle == INVALID_DS_HANDLE) {
+            LOGERR("SupportedHdcp: video port handle not available for '%s'", resolvedEntry.name.c_str());
+            return Core::ERROR_UNAVAILABLE;
         }
         auto* vp = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsVideoPort>();
         if (!vp) {
             LOGERR("SupportedHdcp: IDeviceSettingsVideoPort interface not available");
             return Core::ERROR_UNAVAILABLE;
         }
-        int32_t handle = INVALID_DS_HANDLE;
-        result = vp->GetVideoPort(resolvedEntry.type, resolvedEntry.index, handle);
+        Exchange::IDeviceSettingsVideoPort::HDCPProtocolVersion version;
+        result = vp->GetHDCPProtocolVersionOnVideoPort(handle, version);
         if (result == Core::ERROR_NONE) {
-            Exchange::IDeviceSettingsVideoPort::HDCPProtocolVersion version;
-            result = vp->GetHDCPProtocolVersionOnVideoPort(handle, version);
-            if (result == Core::ERROR_NONE) {
-                switch (version) {
-                case Exchange::IDeviceSettingsVideoPort::DS_HDCP_VERSION_2X:
-                    supportedHDCPVer.supportedHDCPVersion = HDCP_22;
-                    break;
-                case Exchange::IDeviceSettingsVideoPort::DS_HDCP_VERSION_1X:
-                    supportedHDCPVer.supportedHDCPVersion = HDCP_14;
-                    break;
-                default:
-                    result = Core::ERROR_GENERAL;
-                    break;
-                }
+            switch (version) {
+            case Exchange::IDeviceSettingsVideoPort::DS_HDCP_VERSION_2X:
+                supportedHDCPVer.supportedHDCPVersion = HDCP_22;
+                break;
+            case Exchange::IDeviceSettingsVideoPort::DS_HDCP_VERSION_1X:
+                supportedHDCPVer.supportedHDCPVersion = HDCP_14;
+                break;
+            default:
+                result = Core::ERROR_GENERAL;
+                break;
             }
         }
         vp->Release();
