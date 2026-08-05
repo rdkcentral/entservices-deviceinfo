@@ -269,6 +269,11 @@ namespace Plugin {
         
         if (result == Core::ERROR_NONE )
         {
+			if (GetFileRegex(_T("/etc/skyversion.txt"), std::regex("^RDK_VERSION=([^\\n]+)$"), firmwareVersionInfo.middleware) != Core::ERROR_NONE)
+            {
+                firmwareVersionInfo.middleware = "";
+            }
+
             if (GetFileRegex(_T("/version.txt"), std::regex("^SDK_VERSION=([^\\n]+)$"), firmwareVersionInfo.sdk) != Core::ERROR_NONE)
             {
                 firmwareVersionInfo.sdk = "";
