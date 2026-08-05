@@ -54,7 +54,7 @@ namespace {
     static void removeFile(const char* fileName)
     {
         if (strcmp(fileName, "/etc/device.properties") == 0 || strcmp(fileName, "/etc/authService.conf") == 0 || strcmp(fileName, "/opt/www/authService/partnerId3.dat") == 0 || \
-            strcmp(fileName, "/tmp/.manufacturer") == 0 || strcmp(fileName, "/version.txt") == 0) {
+            strcmp(fileName, "/tmp/.manufacturer") == 0 || strcmp(fileName, "/version.txt") == 0 || strcmp(fileName, "/etc/skyversion.txt") == 0) {
             std::ofstream(fileName, std::ios::trunc);
         }
     }
@@ -429,6 +429,8 @@ TEST_F(DeviceInfoTest, ChipSet_Success)
 
 TEST_F(DeviceInfoTest, FirmwareVersion_Success)
 {
+    removeFile("/etc/skyversion.txt");
+
     std::ofstream file("/version.txt");
     file << "imagename:TEST_IMAGE_V1\n";
     file << "SDK_VERSION=18.4\n";
@@ -452,7 +454,7 @@ TEST_F(DeviceInfoTest, FirmwareVersion_Success)
             }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V1\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"PDRI_1.2.3\"}"));
+    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V1\",\"middleware\":\"\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"PDRI_1.2.3\"}"));
 }
 
 TEST_F(DeviceInfoTest, Sku_Success_FromMFR)
@@ -682,6 +684,8 @@ TEST_F(DeviceInfoTest, ChipSet_Failure_FileNotFound)
 
 TEST_F(DeviceInfoTest, FirmwareVersion_Success_MissingOptionalFields)
 {
+    removeFile("/etc/skyversion.txt");
+
     std::ofstream file("/version.txt");
     file << "imagename:TEST_IMAGE_V2\n";
     file.close();
@@ -690,7 +694,7 @@ TEST_F(DeviceInfoTest, FirmwareVersion_Success_MissingOptionalFields)
         .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V2\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V2\",\"middleware\":\"\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
 }
 
 TEST_F(DeviceInfoTest, FirmwareVersion_Failure_ImageNameNotFound)
@@ -1619,4 +1623,61 @@ TEST_F(DeviceInfoTest, Information_Success)
 
     EXPECT_FALSE(info.empty());
     EXPECT_EQ(info, "The DeviceInfo plugin allows retrieving of various device-related information.");
+}
+
+TEST_F(DeviceInfoTest, FirmwareVersion_Success_WithMiddleware)
+{
+    std::ofstream versionFile("/version.txt");
+    versionFile << "imagename:TEST_IMAGE_MW\n";
+    versionFile << "SDK_VERSION=18.4\n";
+    versionFile << "MEDIARITE=9.0.1\n";
+    versionFile << "YOCTO_VERSION=dunfell\n";
+    versionFile.close();
+
+    std::ofstream skyVersionFile("/etc/skyversion.txt");
+    skyVersionFile << "RDK_VERSION=8.3p9s1\n";
+    skyVersionFile.close();
+
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_MW\",\"middleware\":\"8.3p9s1\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"\"}"));
+
+    removeFile("/etc/skyversion.txt");
+}
+
+TEST_F(DeviceInfoTest, FirmwareVersion_Success_MiddlewareEmptyWhenSkyVersionFileMissing)
+{
+    removeFile("/etc/skyversion.txt");
+
+    std::ofstream versionFile("/version.txt");
+    versionFile << "imagename:TEST_IMAGE_NOMW\n";
+    versionFile.close();
+
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_NOMW\",\"middleware\":\"\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, FirmwareVersion_Success_MiddlewareWithSkyVersionNoRdkVersionKey)
+{
+    std::ofstream versionFile("/version.txt");
+    versionFile << "imagename:TEST_IMAGE_V5\n";
+    versionFile.close();
+
+    std::ofstream skyVersionFile("/etc/skyversion.txt");
+    skyVersionFile << "OTHER_KEY=some_value\n";
+    skyVersionFile << "NOT_RDK_VERSION=ignored\n";
+    skyVersionFile.close();
+
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V5\",\"middleware\":\"\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
+
+    removeFile("/etc/skyversion.txt");
 }
