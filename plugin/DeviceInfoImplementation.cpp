@@ -516,6 +516,7 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::OsName(string& osName) const
     {
+        std::shared_lock<std::shared_mutex> lock(_osPropertiesMutex);
         osName.clear();
         GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), osName);
         return Core::ERROR_NONE;
@@ -523,6 +524,7 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::OsName(const string& osName)
     {
+        std::unique_lock<std::shared_mutex> lock(_osPropertiesMutex);
         string curVersion;
         GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), curVersion);
         return WriteOsDetails(osName, curVersion);
@@ -530,6 +532,7 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::OsVersion(string& osVersion) const
     {
+        std::shared_lock<std::shared_mutex> lock(_osPropertiesMutex);
         osVersion.clear();
         GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), osVersion);
         return Core::ERROR_NONE;
@@ -537,6 +540,7 @@ namespace Plugin {
 
     Core::hresult DeviceInfoImplementation::OsVersion(const string& osVersion)
     {
+        std::unique_lock<std::shared_mutex> lock(_osPropertiesMutex);
         string curName;
         GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), curName);
         return WriteOsDetails(curName, osVersion);
