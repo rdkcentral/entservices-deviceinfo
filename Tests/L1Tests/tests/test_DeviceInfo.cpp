@@ -1614,449 +1614,321 @@ TEST_F(DeviceInfoTest, EstbIp_Success_NewlineStripped)
 
 TEST_F(DeviceInfoTest, Information_Success)
 {
-    // Test that Information() returns the correct description string
     string info = plugin->Information();
 
     EXPECT_FALSE(info.empty());
     EXPECT_EQ(info, "The DeviceInfo plugin allows retrieving of various device-related information.");
 }
 
-TEST_F(DeviceInfoTest, GetOsName_Success)
+TEST_F(DeviceInfoTest, OsName_Get_ReturnsEmptyString_WhenFileNotExists)
 {
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=TestOS\n";
-    file << "os_version=1.0.0\n";
+    unlink("/opt/persistent/osdetails.info");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_Get_ReturnsPersistedValue)
+{
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "os_name=RDK\nos_version=8.1\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osName\":\"TestOS\"}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"RDK\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, GetOsName_Success_EmptyValue)
+TEST_F(DeviceInfoTest, OsName_Get_ReturnsEmptyString_WhenKeyMissingInFile)
 {
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=\n";
-    file << "os_version=1.0.0\n";
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "os_version=8.1\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osName\":\"\"}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, GetOsName_Success_FileNotFound)
+TEST_F(DeviceInfoTest, OsName_Set_Success_CreatesFileWhenNotExists)
 {
-    if (access(OS_DETAILS_FILE, F_OK) == 0) {
-        std::remove(OS_DETAILS_FILE);
-    }
+    unlink("/opt/persistent/osdetails.info");
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osName\":\"\"}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK\"}"), response));
+
+    std::ifstream file("/opt/persistent/osdetails.info");
+    EXPECT_TRUE(file.is_open());
+    file.close();
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, GetOsName_Success_MalformedFile)
+TEST_F(DeviceInfoTest, OsName_Set_Success_ValueReadableAfterSet)
 {
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "invalid_format_line\n";
-    file << "os_version=1.0.0\n";
+    unlink("/opt/persistent/osdetails.info");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"Entertainment OS\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"Entertainment OS\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
+}
+
+TEST_F(DeviceInfoTest, OsName_Set_Success_UpdatesExistingValue)
+{
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "os_name=OldName\nos_version=1.0\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osName\":\"\"}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"NewName\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"NewName\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, GetOsVersion_Success)
+TEST_F(DeviceInfoTest, OsName_Set_PreservesExistingOsVersion)
 {
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=TestOS\n";
-    file << "os_version=1.0.0\n";
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "os_name=OldName\nos_version=9.9\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osVersion\":\"1.0.0\"}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"NewName\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"9.9\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, GetOsVersion_Success_EmptyValue)
+TEST_F(DeviceInfoTest, OsName_Set_Success_EmptyString)
 {
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=TestOS\n";
-    file << "os_version=\n";
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "os_name=RDK\nos_version=8.1\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osVersion\":\"\"}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, GetOsVersion_Success_FileNotFound)
+TEST_F(DeviceInfoTest, OsName_Set_Failure_WhenDirectoryUnwritable)
 {
-    if (access(OS_DETAILS_FILE, F_OK) == 0) {
-        std::remove(OS_DETAILS_FILE);
-    }
+    system("mkdir -p /opt/persistent/osdetails.info.tmp");
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osVersion\":\"\"}"));
+    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK\"}"), response));
+
+    system("rmdir /opt/persistent/osdetails.info.tmp");
 }
 
-TEST_F(DeviceInfoTest, GetOsVersion_Success_MalformedFile)
+TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsEmptyString_WhenFileNotExists)
 {
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=TestOS\n";
-    file << "invalid_format_line\n";
+    unlink("/opt/persistent/osdetails.info");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsPersistedValue)
+{
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "os_name=RDK\nos_version=8.1\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osVersion\":\"\"}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"8.1\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, SetOsName_Success)
+TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsEmptyString_WhenKeyMissingInFile)
 {
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=OldOS\n";
-    file << "os_version=1.0.0\n";
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "os_name=RDK\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"NewOS\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
 
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundName = false;
-    bool foundVersion = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_name=NewOS") {
-            foundName = true;
-        }
-        if (line == "os_version=1.0.0") {
-            foundVersion = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundName);
-    EXPECT_TRUE(foundVersion);
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, SetOsName_Success_EmptyVersion)
+TEST_F(DeviceInfoTest, OsVersion_Set_Success_CreatesFileWhenNotExists)
 {
-    if (access(OS_DETAILS_FILE, F_OK) == 0) {
-        std::remove(OS_DETAILS_FILE);
-    }
+    unlink("/opt/persistent/osdetails.info");
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"TestOS\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"8.1\"}"), response));
 
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundName = false;
-    bool foundVersion = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_name=TestOS") {
-            foundName = true;
-        }
-        if (line == "os_version=") {
-            foundVersion = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundName);
-    EXPECT_TRUE(foundVersion);
+    std::ifstream file("/opt/persistent/osdetails.info");
+    EXPECT_TRUE(file.is_open());
+    file.close();
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, SetOsName_Success_SpecialCharacters)
+TEST_F(DeviceInfoTest, OsVersion_Set_Success_ValueReadableAfterSet)
 {
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=OldOS\n";
-    file << "os_version=1.0.0\n";
+    unlink("/opt/persistent/osdetails.info");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"1.3\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"1.3\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Set_Success_UpdatesExistingValue)
+{
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "os_name=RDK\nos_version=1.0\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"OS-2.0_beta#1\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"2.0\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"2.0\"}"));
 
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundName = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_name=OS-2.0_beta#1") {
-            foundName = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundName);
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, SetOsVersion_Success)
+TEST_F(DeviceInfoTest, OsVersion_Set_PreservesExistingOsName)
 {
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=TestOS\n";
-    file << "os_version=1.0.0\n";
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "os_name=Sky OS\nos_version=1.0\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"2.0.0\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"2.0\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"Sky OS\"}"));
 
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundName = false;
-    bool foundVersion = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_name=TestOS") {
-            foundName = true;
-        }
-        if (line == "os_version=2.0.0") {
-            foundVersion = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundName);
-    EXPECT_TRUE(foundVersion);
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, SetOsVersion_Success_EmptyName)
+TEST_F(DeviceInfoTest, OsVersion_Set_Success_EmptyString)
 {
-    if (access(OS_DETAILS_FILE, F_OK) == 0) {
-        std::remove(OS_DETAILS_FILE);
-    }
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"2.0.0\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundName = false;
-    bool foundVersion = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_name=") {
-            foundName = true;
-        }
-        if (line == "os_version=2.0.0") {
-            foundVersion = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundName);
-    EXPECT_TRUE(foundVersion);
-}
-
-TEST_F(DeviceInfoTest, SetOsVersion_Success_SpecialCharacters)
-{
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=TestOS\n";
-    file << "os_version=1.0.0\n";
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "os_name=RDK\nos_version=8.1\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"2.1.0-rc1+build.123\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
 
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundVersion = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_version=2.1.0-rc1+build.123") {
-            foundVersion = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundVersion);
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, SetOsName_Negative_EmptyValue)
+TEST_F(DeviceInfoTest, OsVersion_Set_Failure_WhenDirectoryUnwritable)
 {
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=TestOS\n";
-    file << "os_version=1.0.0\n";
+    system("mkdir -p /opt/persistent/osdetails.info.tmp");
+
+    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"8.1\"}"), response));
+
+    system("rmdir /opt/persistent/osdetails.info.tmp");
+}
+
+TEST_F(DeviceInfoTest, OsProperties_BothPropertiesPersistIndependently)
+{
+    unlink("/opt/persistent/osdetails.info");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK-E\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"2.0\"}"), response));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"RDK-E\"}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"2.0\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
+}
+
+TEST_F(DeviceInfoTest, OsProperties_FileContainsBothKeysAfterSetBoth)
+{
+    unlink("/opt/persistent/osdetails.info");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"Horizon OS\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"3.5\"}"), response));
+
+    std::ifstream file("/opt/persistent/osdetails.info");
+    string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
+    EXPECT_TRUE(content.find("os_name=Horizon OS") != string::npos);
+    EXPECT_TRUE(content.find("os_version=3.5") != string::npos);
 
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundName = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_name=") {
-            foundName = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundName);
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, SetOsVersion_Negative_EmptyValue)
+TEST_F(DeviceInfoTest, OsName_Get_ReturnsEmptyString_WhenFileIsEmpty)
 {
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=TestOS\n";
-    file << "os_version=1.0.0\n";
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info", std::ios::trunc);
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
 
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundVersion = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_version=") {
-            foundVersion = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundVersion);
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, SetOsName_Negative_LongValue)
+TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsEmptyString_WhenFileIsEmpty)
 {
-    std::string longName(1000, 'X');
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"") + longName + _T("\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundName = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_name=" + longName) {
-            foundName = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundName);
-}
-
-TEST_F(DeviceInfoTest, SetOsVersion_Negative_LongValue)
-{
-    std::string longVersion(1000, '9');
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"") + longVersion + _T("\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundVersion = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_version=" + longVersion) {
-            foundVersion = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundVersion);
-}
-
-TEST_F(DeviceInfoTest, SetOsName_Boundary_MultipleSequentialWrites)
-{
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"OS1\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"OS2\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"OS3\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundName = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_name=OS3") {
-            foundName = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundName);
-}
-
-TEST_F(DeviceInfoTest, SetOsVersion_Boundary_MultipleSequentialWrites)
-{
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"1.0.0\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"2.0.0\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"3.0.0\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundVersion = false;
-    while (std::getline(readFile, line)) {
-        if (line == "os_version=3.0.0") {
-            foundVersion = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundVersion);
-}
-
-TEST_F(DeviceInfoTest, GetOsName_Boundary_AfterSetOsName)
-{
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"TestOS123\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osName\":\"TestOS123\"}"));
-}
-
-TEST_F(DeviceInfoTest, GetOsVersion_Boundary_AfterSetOsVersion)
-{
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"4.5.6\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osVersion\":\"4.5.6\"}"));
-}
-
-TEST_F(DeviceInfoTest, SetOsName_Boundary_NewlineInValue)
-{
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"TestOS\\nNewline\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundName = false;
-    while (std::getline(readFile, line)) {
-        if (line.find("os_name=TestOS") != std::string::npos) {
-            foundName = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundName);
-}
-
-TEST_F(DeviceInfoTest, SetOsVersion_Boundary_NewlineInValue)
-{
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"1.0.0\\nExtra\"}"), response));
-    EXPECT_EQ(response, _T("{\"success\":true}"));
-
-    std::ifstream readFile(OS_DETAILS_FILE);
-    std::string line;
-    bool foundVersion = false;
-    while (std::getline(readFile, line)) {
-        if (line.find("os_version=1.0.0") != std::string::npos) {
-            foundVersion = true;
-        }
-    }
-    readFile.close();
-    EXPECT_TRUE(foundVersion);
-}
-
-TEST_F(DeviceInfoTest, GetOsName_Boundary_LargeValue)
-{
-    std::string largeName(500, 'A');
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=" << largeName << "\n";
-    file << "os_version=1.0.0\n";
+    system("mkdir -p /opt/persistent");
+    std::ofstream file("/opt/persistent/osdetails.info", std::ios::trunc);
     file.close();
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
-    EXPECT_TRUE(response.find(largeName) != std::string::npos);
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, GetOsVersion_Boundary_LargeValue)
+TEST_F(DeviceInfoTest, OsName_Set_Success_VersionWithDotNotation)
 {
-    std::string largeVersion(500, '9');
-    std::ofstream file(OS_DETAILS_FILE);
-    file << "os_name=TestOS\n";
-    file << "os_version=" << largeVersion << "\n";
-    file.close();
+    unlink("/opt/persistent/osdetails.info");
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
-    EXPECT_TRUE(response.find(largeVersion) != std::string::npos);
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"1.2.3.4\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"1.2.3.4\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
 }
+
+TEST_F(DeviceInfoTest, OsName_Set_Success_OverwriteMultipleTimes)
+{
+    unlink("/opt/persistent/osdetails.info");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK-V\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK-E\"}"), response));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"RDK-E\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Set_Success_OverwriteMultipleTimes)
+{
+    unlink("/opt/persistent/osdetails.info");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"1.0\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"2.0\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"3.0\"}"), response));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"3.0\"}"));
+
+    unlink("/opt/persistent/osdetails.info");
+}
+

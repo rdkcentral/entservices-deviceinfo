@@ -512,32 +512,34 @@ namespace Plugin {
         return result;
     }
 
-    Core::hresult DeviceInfoImplementation::setOsName(const string& osName)
-    {
-        string curVersion;
-        GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), curVersion);
-        return WriteOsDetails(osName, curVersion);
-    }
+    // OS Properties Implementation (Thunder property pattern)
 
-    Core::hresult DeviceInfoImplementation::setOsVersion(const string& osVersion)
-    {
-        string curName;
-        GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), curName);
-        return WriteOsDetails(curName, osVersion);
-    }
-
-    Core::hresult DeviceInfoImplementation::getOsName(string& osName) const
+    Core::hresult DeviceInfoImplementation::OsName(string& osName) const
     {
         osName.clear();
         GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), osName);
         return Core::ERROR_NONE;
     }
 
-    Core::hresult DeviceInfoImplementation::getOsVersion(string& osVersion) const
+    Core::hresult DeviceInfoImplementation::OsName(const string& osName)
+    {
+        string curVersion;
+        GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), curVersion);
+        return WriteOsDetails(osName, curVersion);
+    }
+
+    Core::hresult DeviceInfoImplementation::OsVersion(string& osVersion) const
     {
         osVersion.clear();
         GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), osVersion);
         return Core::ERROR_NONE;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsVersion(const string& osVersion)
+    {
+        string curName;
+        GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), curName);
+        return WriteOsDetails(curName, osVersion);
     }
 }
 }
