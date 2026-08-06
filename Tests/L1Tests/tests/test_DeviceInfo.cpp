@@ -1620,3 +1620,443 @@ TEST_F(DeviceInfoTest, Information_Success)
     EXPECT_FALSE(info.empty());
     EXPECT_EQ(info, "The DeviceInfo plugin allows retrieving of various device-related information.");
 }
+
+TEST_F(DeviceInfoTest, GetOsName_Success)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=TestOS\n";
+    file << "os_version=1.0.0\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"TestOS\"}"));
+}
+
+TEST_F(DeviceInfoTest, GetOsName_Success_EmptyValue)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=\n";
+    file << "os_version=1.0.0\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, GetOsName_Success_FileNotFound)
+{
+    if (access(OS_DETAILS_FILE, F_OK) == 0) {
+        std::remove(OS_DETAILS_FILE);
+    }
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, GetOsName_Success_MalformedFile)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "invalid_format_line\n";
+    file << "os_version=1.0.0\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, GetOsVersion_Success)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=TestOS\n";
+    file << "os_version=1.0.0\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"1.0.0\"}"));
+}
+
+TEST_F(DeviceInfoTest, GetOsVersion_Success_EmptyValue)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=TestOS\n";
+    file << "os_version=\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, GetOsVersion_Success_FileNotFound)
+{
+    if (access(OS_DETAILS_FILE, F_OK) == 0) {
+        std::remove(OS_DETAILS_FILE);
+    }
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, GetOsVersion_Success_MalformedFile)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=TestOS\n";
+    file << "invalid_format_line\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, SetOsName_Success)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=OldOS\n";
+    file << "os_version=1.0.0\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"NewOS\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundName = false;
+    bool foundVersion = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_name=NewOS") {
+            foundName = true;
+        }
+        if (line == "os_version=1.0.0") {
+            foundVersion = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundName);
+    EXPECT_TRUE(foundVersion);
+}
+
+TEST_F(DeviceInfoTest, SetOsName_Success_EmptyVersion)
+{
+    if (access(OS_DETAILS_FILE, F_OK) == 0) {
+        std::remove(OS_DETAILS_FILE);
+    }
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"TestOS\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundName = false;
+    bool foundVersion = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_name=TestOS") {
+            foundName = true;
+        }
+        if (line == "os_version=") {
+            foundVersion = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundName);
+    EXPECT_TRUE(foundVersion);
+}
+
+TEST_F(DeviceInfoTest, SetOsName_Success_SpecialCharacters)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=OldOS\n";
+    file << "os_version=1.0.0\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"OS-2.0_beta#1\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundName = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_name=OS-2.0_beta#1") {
+            foundName = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundName);
+}
+
+TEST_F(DeviceInfoTest, SetOsVersion_Success)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=TestOS\n";
+    file << "os_version=1.0.0\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"2.0.0\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundName = false;
+    bool foundVersion = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_name=TestOS") {
+            foundName = true;
+        }
+        if (line == "os_version=2.0.0") {
+            foundVersion = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundName);
+    EXPECT_TRUE(foundVersion);
+}
+
+TEST_F(DeviceInfoTest, SetOsVersion_Success_EmptyName)
+{
+    if (access(OS_DETAILS_FILE, F_OK) == 0) {
+        std::remove(OS_DETAILS_FILE);
+    }
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"2.0.0\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundName = false;
+    bool foundVersion = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_name=") {
+            foundName = true;
+        }
+        if (line == "os_version=2.0.0") {
+            foundVersion = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundName);
+    EXPECT_TRUE(foundVersion);
+}
+
+TEST_F(DeviceInfoTest, SetOsVersion_Success_SpecialCharacters)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=TestOS\n";
+    file << "os_version=1.0.0\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"2.1.0-rc1+build.123\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundVersion = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_version=2.1.0-rc1+build.123") {
+            foundVersion = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundVersion);
+}
+
+TEST_F(DeviceInfoTest, SetOsName_Negative_EmptyValue)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=TestOS\n";
+    file << "os_version=1.0.0\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundName = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_name=") {
+            foundName = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundName);
+}
+
+TEST_F(DeviceInfoTest, SetOsVersion_Negative_EmptyValue)
+{
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=TestOS\n";
+    file << "os_version=1.0.0\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundVersion = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_version=") {
+            foundVersion = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundVersion);
+}
+
+TEST_F(DeviceInfoTest, SetOsName_Negative_LongValue)
+{
+    std::string longName(1000, 'X');
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"") + longName + _T("\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundName = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_name=" + longName) {
+            foundName = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundName);
+}
+
+TEST_F(DeviceInfoTest, SetOsVersion_Negative_LongValue)
+{
+    std::string longVersion(1000, '9');
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"") + longVersion + _T("\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundVersion = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_version=" + longVersion) {
+            foundVersion = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundVersion);
+}
+
+TEST_F(DeviceInfoTest, SetOsName_Boundary_MultipleSequentialWrites)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"OS1\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"OS2\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"OS3\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundName = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_name=OS3") {
+            foundName = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundName);
+}
+
+TEST_F(DeviceInfoTest, SetOsVersion_Boundary_MultipleSequentialWrites)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"1.0.0\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"2.0.0\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"3.0.0\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundVersion = false;
+    while (std::getline(readFile, line)) {
+        if (line == "os_version=3.0.0") {
+            foundVersion = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundVersion);
+}
+
+TEST_F(DeviceInfoTest, GetOsName_Boundary_AfterSetOsName)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"TestOS123\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"TestOS123\"}"));
+}
+
+TEST_F(DeviceInfoTest, GetOsVersion_Boundary_AfterSetOsVersion)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"4.5.6\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"4.5.6\"}"));
+}
+
+TEST_F(DeviceInfoTest, SetOsName_Boundary_NewlineInValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosname"), _T("{\"osName\":\"TestOS\\nNewline\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundName = false;
+    while (std::getline(readFile, line)) {
+        if (line.find("os_name=TestOS") != std::string::npos) {
+            foundName = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundName);
+}
+
+TEST_F(DeviceInfoTest, SetOsVersion_Boundary_NewlineInValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("setosversion"), _T("{\"osVersion\":\"1.0.0\\nExtra\"}"), response));
+    EXPECT_EQ(response, _T("{\"success\":true}"));
+
+    std::ifstream readFile(OS_DETAILS_FILE);
+    std::string line;
+    bool foundVersion = false;
+    while (std::getline(readFile, line)) {
+        if (line.find("os_version=1.0.0") != std::string::npos) {
+            foundVersion = true;
+        }
+    }
+    readFile.close();
+    EXPECT_TRUE(foundVersion);
+}
+
+TEST_F(DeviceInfoTest, GetOsName_Boundary_LargeValue)
+{
+    std::string largeName(500, 'A');
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=" << largeName << "\n";
+    file << "os_version=1.0.0\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosname"), _T(""), response));
+    EXPECT_TRUE(response.find(largeName) != std::string::npos);
+}
+
+TEST_F(DeviceInfoTest, GetOsVersion_Boundary_LargeValue)
+{
+    std::string largeVersion(500, '9');
+    std::ofstream file(OS_DETAILS_FILE);
+    file << "os_name=TestOS\n";
+    file << "os_version=" << largeVersion << "\n";
+    file.close();
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("getosversion"), _T(""), response));
+    EXPECT_TRUE(response.find(largeVersion) != std::string::npos);
+}
