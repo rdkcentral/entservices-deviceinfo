@@ -11,7 +11,7 @@ on:
 env:
   BUILD_TYPE: Debug
   REPO_NAME: "deviceinfo"
-  THUNDER_REF: "R4.4.1"
+  THUNDER_REF: "R4_4-RDK"
   INTERFACES_REF: "develop"
   AUTOMATICS_UNAME: ${{ secrets.AUTOMATICS_UNAME}}
   AUTOMATICS_PASSCODE: ${{ secrets. AUTOMATICS_PASSCODE}}
@@ -113,14 +113,14 @@ jobs:
         with:
           repository: rdkcentral/ThunderTools
           path: ThunderTools
-          ref: R4.4.3
+          ref: R4.4_RDK
 
       - name: Checkout entservices-testframework
         uses: actions/checkout@v3
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: 1.0.14
+          ref: feature/RDKEMW-22169
 
       - name: Checkout entservices-deviceinfo
         if: ${{ inputs.caller_source == 'local' }}
