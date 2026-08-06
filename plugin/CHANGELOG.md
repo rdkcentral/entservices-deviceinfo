@@ -14,3 +14,12 @@ All notable changes to this RDK Service will be documented in this file.
 
 * Changes in CHANGELOG should be updated when commits are added to the main or release branches. There should be one CHANGELOG entry per JIRA Ticket. This is not enforced on sprint branches since there could be multiple changes for the same JIRA ticket during development. 
 
+## [Unreleased]
+
+### Added
+- Added `osName` property with get and set operations for retrieving and persisting operating system name
+- Added `osVersion` property with get and set operations for retrieving and persisting operating system version
+- Properties persist to `/opt/persistent/osdetails.info` and survive device reboots
+- Properties are wiped during factory reset (handled by platform)
+- Return empty string when properties have not been set yet
+

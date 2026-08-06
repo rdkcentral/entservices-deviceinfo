@@ -29,6 +29,9 @@
 
 #include <fstream>
 #include <regex>
+#include <map>
+#include <sys/file.h> // For flock
+#include <unistd.h>   // For unlink, rename
 
 namespace WPEFramework {
 namespace Plugin {
@@ -123,6 +126,9 @@ namespace Plugin {
         ASSERT(service != nullptr);
         _service = service;
         _service->AddRef();
+
+        // Load persisted OS details from file
+        LoadOsDetailsFromFile();
 
         return Core::ERROR_NONE;
     }
@@ -488,6 +494,182 @@ namespace Plugin {
         }
 
         return result;
+    }
+
+    // OS Properties Implementation
+
+    Core::hresult DeviceInfoImplementation::OsName(string& osName) const
+    {
+        _lock.Lock();
+        osName = _osName;
+        _lock.Unlock();
+        
+        LOGINFO("OsName get: '%s'", osName.c_str());
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsName(const string& osName)
+    {
+        LOGINFO("OsName set: '%s'", osName.c_str());
+        
+        _lock.Lock();
+        _osName = osName;
+        _lock.Unlock();
+        
+        uint32_t result = SaveOsDetailsToFile("osname", osName);
+        if (result != Core::ERROR_NONE) {
+            TRACE(Trace::Error, (_T("Failed to persist osName value")));
+        }
+        
+        return result;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsVersion(string& osVersion) const
+    {
+        _lock.Lock();
+        osVersion = _osVersion;
+        _lock.Unlock();
+        
+        LOGINFO("OsVersion get: '%s'", osVersion.c_str());
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsVersion(const string& osVersion)
+    {
+        LOGINFO("OsVersion set: '%s'", osVersion.c_str());
+        
+        _lock.Lock();
+        _osVersion = osVersion;
+        _lock.Unlock();
+        
+        uint32_t result = SaveOsDetailsToFile("osversion", osVersion);
+        if (result != Core::ERROR_NONE) {
+            TRACE(Trace::Error, (_T("Failed to persist osVersion value")));
+        }
+        
+        return result;
+    }
+
+    // Persistence Layer Implementation
+
+    uint32_t DeviceInfoImplementation::LoadOsDetailsFromFile()
+    {
+        static const string filePath = "/opt/persistent/osdetails.info";
+        std::map<string, string> data;
+        
+        uint32_t result = ReadKeyValueFile(filePath, data);
+        if (result == Core::ERROR_NONE) {
+            _lock.Lock();
+            auto it = data.find("osname");
+            if (it != data.end()) {
+                _osName = it->second;
+            }
+            it = data.find("osversion");
+            if (it != data.end()) {
+                _osVersion = it->second;
+            }
+            _lock.Unlock();
+            
+            LOGINFO("Loaded OS details - osName: '%s', osVersion: '%s'", _osName.c_str(), _osVersion.c_str());
+        } else {
+            LOGINFO("OS details file not found or empty, using default empty values");
+        }
+        
+        return Core::ERROR_NONE; // Non-existent file is not an error
+    }
+
+    uint32_t DeviceInfoImplementation::SaveOsDetailsToFile(const string& key, const string& value)
+    {
+        static const string filePath = "/opt/persistent/osdetails.info";
+        std::map<string, string> data;
+        
+        // Read existing data
+        ReadKeyValueFile(filePath, data);
+        
+        // Update the specific key
+        data[key] = value;
+        
+        // Write back to file
+        return WriteKeyValueFile(filePath, data);
+    }
+
+    uint32_t DeviceInfoImplementation::ReadKeyValueFile(const string& filePath, std::map<string, string>& data)
+    {
+        std::ifstream file(filePath);
+        if (!file.is_open()) {
+            TRACE(Trace::Information, (_T("File not found: %s"), filePath.c_str()));
+            return Core::ERROR_OPENING_FAILED;
+        }
+
+        // Use flock for file locking
+        int fd = fileno(reinterpret_cast<FILE*>(&file));
+        if (flock(fd, LOCK_SH) != 0) {
+            TRACE(Trace::Warning, (_T("Failed to acquire shared lock on %s"), filePath.c_str()));
+        }
+
+        string line;
+        while (std::getline(file, line)) {
+            // Skip empty lines and comments
+            if (line.empty() || line[0] == '#') {
+                continue;
+            }
+
+            // Find the first '=' character
+            size_t pos = line.find('=');
+            if (pos != string::npos) {
+                string key = line.substr(0, pos);
+                string value = line.substr(pos + 1);
+                
+                // Trim whitespace from key and value
+                key.erase(0, key.find_first_not_of(" \t\r\n"));
+                key.erase(key.find_last_not_of(" \t\r\n") + 1);
+                value.erase(0, value.find_first_not_of(" \t\r\n"));
+                value.erase(value.find_last_not_of(" \t\r\n") + 1);
+                
+                data[key] = value;
+            }
+        }
+
+        flock(fd, LOCK_UN);
+        file.close();
+        
+        return Core::ERROR_NONE;
+    }
+
+    uint32_t DeviceInfoImplementation::WriteKeyValueFile(const string& filePath, const std::map<string, string>& data)
+    {
+        // Write to temporary file first (atomic write pattern)
+        string tempPath = filePath + ".tmp";
+        
+        std::ofstream file(tempPath, std::ios::trunc);
+        if (!file.is_open()) {
+            TRACE(Trace::Error, (_T("Failed to open temp file for writing: %s"), tempPath.c_str()));
+            return Core::ERROR_WRITE_ERROR;
+        }
+
+        // Use flock for file locking
+        int fd = fileno(reinterpret_cast<FILE*>(&file));
+        if (flock(fd, LOCK_EX) != 0) {
+            TRACE(Trace::Warning, (_T("Failed to acquire exclusive lock on %s"), tempPath.c_str()));
+        }
+
+        // Write key-value pairs
+        for (const auto& kv : data) {
+            file << kv.first << "=" << kv.second << "\n";
+        }
+
+        flock(fd, LOCK_UN);
+        file.close();
+
+        // Atomic rename
+        if (rename(tempPath.c_str(), filePath.c_str()) != 0) {
+            TRACE(Trace::Error, (_T("Failed to rename temp file to %s"), filePath.c_str()));
+            unlink(tempPath.c_str()); // Clean up temp file
+            return Core::ERROR_WRITE_ERROR;
+        }
+
+        LOGINFO("Successfully wrote OS details to %s", filePath.c_str());
+        return Core::ERROR_NONE;
     }
 }
 }

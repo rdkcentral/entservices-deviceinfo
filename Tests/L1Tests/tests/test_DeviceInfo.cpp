@@ -1620,3 +1620,323 @@ TEST_F(DeviceInfoTest, Information_Success)
     EXPECT_FALSE(info.empty());
     EXPECT_EQ(info, "The DeviceInfo plugin allows retrieving of various device-related information.");
 }
+
+// =========== OS Properties Tests ===========
+
+TEST_F(DeviceInfoTest, OsName_Get_EmptyWhenFileNotExists)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_Set_Success)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Set osName
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK\"}"), response));
+
+    // Verify the set operation succeeded
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"RDK\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_Set_PersistsAcrossReads)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Set osName
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"Entertainment OS\"}"), response));
+
+    // Read multiple times to verify persistence
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"Entertainment OS\"}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"Entertainment OS\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_Set_UpdateExistingValue)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Set initial value
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK\"}"), response));
+
+    // Update to new value
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK-V\"}"), response));
+
+    // Verify updated value
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"RDK-V\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Get_EmptyWhenFileNotExists)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Set_Success)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Set osVersion
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"8.1\"}"), response));
+
+    // Verify the set operation succeeded
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"8.1\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Set_PersistsAcrossReads)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Set osVersion
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"1.3.0\"}"), response));
+
+    // Read multiple times to verify persistence
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"1.3.0\"}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"1.3.0\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Set_UpdateExistingValue)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Set initial value
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"8.1\"}"), response));
+
+    // Update to new value
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"8.2\"}"), response));
+
+    // Verify updated value
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"8.2\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsProperties_BothPropertiesPersistIndependently)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Set osName
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK-E\"}"), response));
+
+    // Set osVersion
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"2.0\"}"), response));
+
+    // Verify both values persist independently
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"RDK-E\"}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"2.0\"}"));
+
+    // Verify file exists and contains both properties
+    std::ifstream file("/opt/persistent/osdetails.info");
+    EXPECT_TRUE(file.is_open());
+    
+    string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    
+    EXPECT_TRUE(content.find("osname=RDK-E") != string::npos);
+    EXPECT_TRUE(content.find("osversion=2.0") != string::npos);
+}
+
+TEST_F(DeviceInfoTest, OsProperties_FileCreatedOnFirstSet)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Verify file doesn't exist
+    std::ifstream checkFile("/opt/persistent/osdetails.info");
+    EXPECT_FALSE(checkFile.is_open());
+
+    // Set osName - should create file
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"Sky OS\"}"), response));
+
+    // Verify file now exists
+    std::ifstream file("/opt/persistent/osdetails.info");
+    EXPECT_TRUE(file.is_open());
+    file.close();
+}
+
+TEST_F(DeviceInfoTest, OsProperties_FileUpdatedOnSubsequentSet)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // First set
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"FirstValue\"}"), response));
+
+    // Second set - should update file
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"SecondValue\"}"), response));
+
+    // Verify updated value
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"SecondValue\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_Set_WithSpecialCharacters)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Set osName with special characters
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK-Linux 2.0\"}"), response));
+
+    // Verify the value
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"RDK-Linux 2.0\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Set_WithDotNotation)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Set osVersion with dot notation
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"1.2.3.4\"}"), response));
+
+    // Verify the value
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"1.2.3.4\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_Set_EmptyString)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Set to non-empty first
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK\"}"), response));
+
+    // Set to empty string
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"\"}"), response));
+
+    // Verify empty value
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Set_EmptyString)
+{
+    // Remove persistence file to ensure clean state
+    unlink("/opt/persistent/osdetails.info");
+
+    // Set to non-empty first
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"8.1\"}"), response));
+
+    // Set to empty string
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"\"}"), response));
+
+    // Verify empty value
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsProperties_LoadFromExistingFile)
+{
+    // Create persistence file manually
+    if (0 != system("mkdir -p /opt/persistent")) { /* do nothing */ }
+    
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "osname=Horizon OS\n";
+    file << "osversion=3.0\n";
+    file.close();
+
+    // Create new plugin instance to trigger file load
+    Core::ProxyType<Plugin::DeviceInfo> newPlugin = Core::ProxyType<Plugin::DeviceInfo>::Create();
+    Core::JSONRPC::Handler& newHandler = *newPlugin;
+
+    EXPECT_EQ(string(""), newPlugin->Initialize(&service));
+
+    // Verify values are loaded
+    DECL_CORE_JSONRPC_CONX newConnection(1, 0);
+    string newResponse;
+
+    EXPECT_EQ(Core::ERROR_NONE, newHandler.Invoke(newConnection, _T("osname"), _T(""), newResponse));
+    EXPECT_EQ(newResponse, _T("{\"osname\":\"Horizon OS\"}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, newHandler.Invoke(newConnection, _T("osversion"), _T(""), newResponse));
+    EXPECT_EQ(newResponse, _T("{\"osversion\":\"3.0\"}"));
+
+    newPlugin->Deinitialize(&service);
+}
+
+TEST_F(DeviceInfoTest, OsProperties_ParseFileWithWhitespace)
+{
+    // Create persistence file with whitespace
+    if (0 != system("mkdir -p /opt/persistent")) { /* do nothing */ }
+    
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "  osname  =  Test OS  \n";
+    file << "osversion=  1.0  \n";
+    file.close();
+
+    // Create new plugin instance to trigger file load
+    Core::ProxyType<Plugin::DeviceInfo> newPlugin = Core::ProxyType<Plugin::DeviceInfo>::Create();
+    Core::JSONRPC::Handler& newHandler = *newPlugin;
+
+    EXPECT_EQ(string(""), newPlugin->Initialize(&service));
+
+    // Verify values are loaded and whitespace is trimmed
+    DECL_CORE_JSONRPC_CONX newConnection(1, 0);
+    string newResponse;
+
+    EXPECT_EQ(Core::ERROR_NONE, newHandler.Invoke(newConnection, _T("osname"), _T(""), newResponse));
+    EXPECT_EQ(newResponse, _T("{\"osname\":\"Test OS\"}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, newHandler.Invoke(newConnection, _T("osversion"), _T(""), newResponse));
+    EXPECT_EQ(newResponse, _T("{\"osversion\":\"1.0\"}"));
+
+    newPlugin->Deinitialize(&service);
+}
+
+TEST_F(DeviceInfoTest, OsProperties_IgnoreCommentsInFile)
+{
+    // Create persistence file with comments
+    if (0 != system("mkdir -p /opt/persistent")) { /* do nothing */ }
+    
+    std::ofstream file("/opt/persistent/osdetails.info");
+    file << "# This is a comment\n";
+    file << "osname=Linux\n";
+    file << "# Another comment\n";
+    file << "osversion=5.0\n";
+    file.close();
+
+    // Create new plugin instance to trigger file load
+    Core::ProxyType<Plugin::DeviceInfo> newPlugin = Core::ProxyType<Plugin::DeviceInfo>::Create();
+    Core::JSONRPC::Handler& newHandler = *newPlugin;
+
+    EXPECT_EQ(string(""), newPlugin->Initialize(&service));
+
+    // Verify values are loaded correctly
+    DECL_CORE_JSONRPC_CONX newConnection(1, 0);
+    string newResponse;
+
+    EXPECT_EQ(Core::ERROR_NONE, newHandler.Invoke(newConnection, _T("osname"), _T(""), newResponse));
+    EXPECT_EQ(newResponse, _T("{\"osname\":\"Linux\"}"));
+
+    EXPECT_EQ(Core::ERROR_NONE, newHandler.Invoke(newConnection, _T("osversion"), _T(""), newResponse));
+    EXPECT_EQ(newResponse, _T("{\"osversion\":\"5.0\"}"));
+
+    newPlugin->Deinitialize(&service);
+}
