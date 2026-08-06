@@ -1630,7 +1630,7 @@ TEST_F(DeviceInfoTest, OsName_Get_ReturnsEmptyString_WhenFileNotExists)
 
 TEST_F(DeviceInfoTest, OsName_Get_ReturnsPersistedValue)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info");
     file << "os_name=RDK\nos_version=8.1\n";
     file.close();
@@ -1643,7 +1643,7 @@ TEST_F(DeviceInfoTest, OsName_Get_ReturnsPersistedValue)
 
 TEST_F(DeviceInfoTest, OsName_Get_ReturnsEmptyString_WhenKeyMissingInFile)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info");
     file << "os_version=8.1\n";
     file.close();
@@ -1679,7 +1679,7 @@ TEST_F(DeviceInfoTest, OsName_Set_Success_ValueReadableAfterSet)
 
 TEST_F(DeviceInfoTest, OsName_Set_Success_UpdatesExistingValue)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info");
     file << "os_name=OldName\nos_version=1.0\n";
     file.close();
@@ -1693,7 +1693,7 @@ TEST_F(DeviceInfoTest, OsName_Set_Success_UpdatesExistingValue)
 
 TEST_F(DeviceInfoTest, OsName_Set_PreservesExistingOsVersion)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info");
     file << "os_name=OldName\nos_version=9.9\n";
     file.close();
@@ -1707,7 +1707,7 @@ TEST_F(DeviceInfoTest, OsName_Set_PreservesExistingOsVersion)
 
 TEST_F(DeviceInfoTest, OsName_Set_Success_EmptyString)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info");
     file << "os_name=RDK\nos_version=8.1\n";
     file.close();
@@ -1721,11 +1721,11 @@ TEST_F(DeviceInfoTest, OsName_Set_Success_EmptyString)
 
 TEST_F(DeviceInfoTest, OsName_Set_Failure_WhenDirectoryUnwritable)
 {
-    system("mkdir -p /opt/persistent/osdetails.info.tmp");
+    (void)system("mkdir -p /opt/persistent/osdetails.info.tmp");
 
     EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK\"}"), response));
 
-    system("rmdir /opt/persistent/osdetails.info.tmp");
+    (void)system("rmdir /opt/persistent/osdetails.info.tmp");
 }
 
 TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsEmptyString_WhenFileNotExists)
@@ -1738,7 +1738,7 @@ TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsEmptyString_WhenFileNotExists)
 
 TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsPersistedValue)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info");
     file << "os_name=RDK\nos_version=8.1\n";
     file.close();
@@ -1751,7 +1751,7 @@ TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsPersistedValue)
 
 TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsEmptyString_WhenKeyMissingInFile)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info");
     file << "os_name=RDK\n";
     file.close();
@@ -1787,7 +1787,7 @@ TEST_F(DeviceInfoTest, OsVersion_Set_Success_ValueReadableAfterSet)
 
 TEST_F(DeviceInfoTest, OsVersion_Set_Success_UpdatesExistingValue)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info");
     file << "os_name=RDK\nos_version=1.0\n";
     file.close();
@@ -1801,7 +1801,7 @@ TEST_F(DeviceInfoTest, OsVersion_Set_Success_UpdatesExistingValue)
 
 TEST_F(DeviceInfoTest, OsVersion_Set_PreservesExistingOsName)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info");
     file << "os_name=Sky OS\nos_version=1.0\n";
     file.close();
@@ -1815,7 +1815,7 @@ TEST_F(DeviceInfoTest, OsVersion_Set_PreservesExistingOsName)
 
 TEST_F(DeviceInfoTest, OsVersion_Set_Success_EmptyString)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info");
     file << "os_name=RDK\nos_version=8.1\n";
     file.close();
@@ -1829,11 +1829,11 @@ TEST_F(DeviceInfoTest, OsVersion_Set_Success_EmptyString)
 
 TEST_F(DeviceInfoTest, OsVersion_Set_Failure_WhenDirectoryUnwritable)
 {
-    system("mkdir -p /opt/persistent/osdetails.info.tmp");
+    (void)system("mkdir -p /opt/persistent/osdetails.info.tmp");
 
     EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"8.1\"}"), response));
 
-    system("rmdir /opt/persistent/osdetails.info.tmp");
+    (void)system("rmdir /opt/persistent/osdetails.info.tmp");
 }
 
 TEST_F(DeviceInfoTest, OsProperties_BothPropertiesPersistIndependently)
@@ -1871,7 +1871,7 @@ TEST_F(DeviceInfoTest, OsProperties_FileContainsBothKeysAfterSetBoth)
 
 TEST_F(DeviceInfoTest, OsName_Get_ReturnsEmptyString_WhenFileIsEmpty)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info", std::ios::trunc);
     file.close();
 
@@ -1883,7 +1883,7 @@ TEST_F(DeviceInfoTest, OsName_Get_ReturnsEmptyString_WhenFileIsEmpty)
 
 TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsEmptyString_WhenFileIsEmpty)
 {
-    system("mkdir -p /opt/persistent");
+    (void)system("mkdir -p /opt/persistent");
     std::ofstream file("/opt/persistent/osdetails.info", std::ios::trunc);
     file.close();
 
