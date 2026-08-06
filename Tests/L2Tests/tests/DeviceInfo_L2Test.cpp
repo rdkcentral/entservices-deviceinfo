@@ -494,10 +494,10 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_PropertyTest)
             EXPECT_EQ(imagename, "CUSTOM_VBN_22.03s_sprint_20220331225312sdy_NG");
             TEST_LOG("Firmware imagename: %s", imagename.c_str());
         }
-        // middleware: empty because /etc/skyversion.txt is not created in constructor
+        // middleware: extracted from imagename "CUSTOM_VBN_22.03s_sprint_..." -> "22.03s"
         if (getResults.HasLabel("middleware")) {
             string middleware = getResults["middleware"].String();
-            EXPECT_EQ(middleware, "");
+            EXPECT_EQ(middleware, "22.03s");
             TEST_LOG("Firmware middleware: %s", middleware.c_str());
         }
         // Additional validations for other firmware fields
@@ -1960,51 +1960,48 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_FirmwareVersion)
     EXPECT_FALSE(firmwareVersion.imagename.empty());
     EXPECT_EQ(firmwareVersion.imagename, "CUSTOM_VBN_22.03s_sprint_20220331225312sdy_NG");
     EXPECT_EQ(firmwareVersion.sdk, "17.3");
-    // middleware is empty because /etc/skyversion.txt is not created in the test constructor
-    EXPECT_EQ(firmwareVersion.middleware, "");
+    // middleware: extracted from imagename segment _22.03s_ -> "22.03s"
+    EXPECT_EQ(firmwareVersion.middleware, "22.03s");
 }
 
 TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_FirmwareVersion_WithMiddleware)
 {
     ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
-    std::ofstream skyVersionFile("/etc/skyversion.txt");
-    skyVersionFile << "RDK_VERSION=8.3p9s1\n";
-    skyVersionFile.close();
+    // Write imagename with version segment _8.3p9s1_ so middleware="8.3p9s1"
+    std::ofstream versionFile("/version.txt");
+    versionFile << "imagename:ELTE11MWR_8.3p9s1_DEV\n";
+    versionFile << "SDK_VERSION=17.3\n";
+    versionFile << "MEDIARITE=8.3.53\n";
+    versionFile << "YOCTO_VERSION=dunfell\n";
+    versionFile.close();
 
     Exchange::IDeviceInfo::FirmwareversionInfo firmwareVersion;
     Core::hresult rc = m_deviceinfoplugin->FirmwareVersion(firmwareVersion);
     EXPECT_EQ(Core::ERROR_NONE, rc);
     EXPECT_FALSE(firmwareVersion.imagename.empty());
-    EXPECT_EQ(firmwareVersion.imagename, "CUSTOM_VBN_22.03s_sprint_20220331225312sdy_NG");
+    EXPECT_EQ(firmwareVersion.imagename, "ELTE11MWR_8.3p9s1_DEV");
     EXPECT_EQ(firmwareVersion.middleware, "8.3p9s1");
     EXPECT_EQ(firmwareVersion.sdk, "17.3");
     EXPECT_EQ(firmwareVersion.mediarite, "8.3.53");
     EXPECT_EQ(firmwareVersion.yocto, "dunfell");
     TEST_LOG("Firmware middleware: %s", firmwareVersion.middleware.c_str());
-
-    // Cleanup
-    std::ofstream cleanup("/etc/skyversion.txt", std::ios::trunc);
-    cleanup.close();
 }
 
-TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_FirmwareVersion_MiddlewareKeyNotInFile)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_FirmwareVersion_MiddlewareDefaultWhenNoVersionInImageName)
 {
     ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
-    std::ofstream skyVersionFile("/etc/skyversion.txt");
-    skyVersionFile << "OTHER_KEY=some_value\n";
-    skyVersionFile.close();
+    // Write imagename with no N.Nxxx version segment -> middleware defaults to "0.0"
+    std::ofstream versionFile("/version.txt");
+    versionFile << "imagename:SOME_IMAGE_NO_VERSION\n";
+    versionFile.close();
 
     Exchange::IDeviceInfo::FirmwareversionInfo firmwareVersion;
     Core::hresult rc = m_deviceinfoplugin->FirmwareVersion(firmwareVersion);
     EXPECT_EQ(Core::ERROR_NONE, rc);
-    EXPECT_EQ(firmwareVersion.middleware, "");
-    TEST_LOG("Firmware middleware (expected empty): %s", firmwareVersion.middleware.c_str());
-
-    // Cleanup
-    std::ofstream cleanup("/etc/skyversion.txt", std::ios::trunc);
-    cleanup.close();
+    EXPECT_EQ(firmwareVersion.middleware, "0.0");
+    TEST_LOG("Firmware middleware (expected 0.0): %s", firmwareVersion.middleware.c_str());
 }
 
 TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_SystemInfo)
