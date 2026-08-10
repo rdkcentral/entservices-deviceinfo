@@ -27,6 +27,7 @@
 
 #include <com/com.h>
 #include <core/core.h>
+#include <mutex>
 
 namespace WPEFramework {
 namespace Plugin {
@@ -64,54 +65,17 @@ namespace Plugin {
         Core::hresult WifiMac(WiFiMac& wiFiMa) const override;
         Core::hresult EstbIp(StbIp& stbIp) const override;
         Core::hresult SupportedAudioPorts(RPC::IStringIterator*& supportedAudioPorts, bool& success) const override;
-
-        /**
-         * @brief Get the operating system name
-         * @param osName Reference to string that will receive the OS name
-         * @return Core::ERROR_NONE on success, error code otherwise
-         * @note Returns empty string if value has not been set
-         */
         Core::hresult OsName(string& osName) const override;
-
-        /**
-         * @brief Set the operating system name
-         * @param osName The OS name to persist (e.g., "RDK", "Entertainment OS")
-         * @return Core::ERROR_NONE on success, error code otherwise
-         * @note Value is persisted to /opt/persistent/osdetails.info and survives reboots
-         */
         Core::hresult OsName(const string& osName) override;
-
-        /**
-         * @brief Get the operating system version
-         * @param osVersion Reference to string that will receive the OS version
-         * @return Core::ERROR_NONE on success, error code otherwise
-         * @note Returns empty string if value has not been set
-         */
         Core::hresult OsVersion(string& osVersion) const override;
-
-        /**
-         * @brief Set the operating system version
-         * @param osVersion The OS version to persist (e.g., "8.1", "1.3")
-         * @return Core::ERROR_NONE on success, error code otherwise
-         * @note Value is persisted to /opt/persistent/osdetails.info and survives reboots
-         */
         Core::hresult OsVersion(const string& osVersion) override;
 
         // IConfiguration interface
         uint32_t Configure(PluginHost::IShell* service) override;
 
     private:
-        // Persistence helper methods
-        uint32_t LoadOsDetailsFromFile();
-        uint32_t SaveOsDetailsToFile(const string& key, const string& value);
-        uint32_t ReadKeyValueFile(const string& filePath, std::map<string, string>& data);
-        uint32_t WriteKeyValueFile(const string& filePath, const std::map<string, string>& data);
-
-    private:
         PluginHost::IShell* _service;
-        mutable Core::CriticalSection _lock;
-        string _osName;
-        string _osVersion;
+        mutable std::mutex _osPropertiesMutex;
     };
 }
 }
