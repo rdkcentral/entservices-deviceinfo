@@ -27,7 +27,7 @@
 
 #include <com/com.h>
 #include <core/core.h>
-#include <shared_mutex>
+#include <mutex>
 
 namespace WPEFramework {
 namespace Plugin {
@@ -75,7 +75,7 @@ namespace Plugin {
 
     private:
         PluginHost::IShell* _service;
-        mutable std::shared_mutex _osPropertiesMutex;
+        mutable std::mutex _osPropertiesMutex;
     };
 }
 }
