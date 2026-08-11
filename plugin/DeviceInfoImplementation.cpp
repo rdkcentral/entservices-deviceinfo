@@ -29,6 +29,10 @@
 
 #include <fstream>
 #include <regex>
+#include <cstdio>
+
+#define OS_DETAILS_FILE "/opt/persistent/osdetails.info"
+#define OS_DETAILS_TMP_FILE "/opt/persistent/osdetails.info.tmp"
 
 namespace WPEFramework {
 namespace Plugin {
@@ -89,7 +93,26 @@ namespace Plugin {
 
             return result;
         }
-        
+
+        uint32_t WriteOsDetails(const string& osName, const string& osVersion)
+        {
+
+            std::ofstream tmp(OS_DETAILS_TMP_FILE);
+            if (!tmp.is_open()) {
+                LOGERR("Failed to open osdetails tmp file for writing");
+                return Core::ERROR_GENERAL;
+            }
+            tmp << "os_name=" << osName << '\n'
+                << "os_version=" << osVersion << '\n';
+            tmp.close();
+            if (std::rename(OS_DETAILS_TMP_FILE, OS_DETAILS_FILE) != 0) {
+                std::remove(OS_DETAILS_TMP_FILE);
+                LOGERR("Failed to atomically write osdetails.info");
+                return Core::ERROR_GENERAL;
+            }
+            return Core::ERROR_NONE;
+        }
+
     }
 
     SERVICE_REGISTRATION(DeviceInfoImplementation, 1, 0);
@@ -488,6 +511,50 @@ namespace Plugin {
         }
 
         return result;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsName(string& osName) const
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        osName.clear();
+        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), osName);
+        if (getFileRegexResult != Core::ERROR_NONE) {
+            LOGINFO("OsName: os_name key not found during read (file missing or key absent).");
+        }
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsName(const string& osName)
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        string curVersion;
+        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), curVersion);
+        if (getFileRegexResult != Core::ERROR_NONE) {
+            LOGINFO("OsName: os_version key not found during write (file missing or key absent).");
+        }
+        return WriteOsDetails(osName, curVersion);
+    }
+
+    Core::hresult DeviceInfoImplementation::OsVersion(string& osVersion) const
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        osVersion.clear();
+        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), osVersion);
+        if (getFileRegexResult != Core::ERROR_NONE) {
+            LOGINFO("OsVersion: os_version key not found during read (file missing or key absent).");
+        }
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsVersion(const string& osVersion)
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        string curName;
+        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), curName);
+        if (getFileRegexResult != Core::ERROR_NONE) {
+            LOGINFO("OsVersion: os_name key not found during write (file missing or key absent).");
+        }
+        return WriteOsDetails(curName, osVersion);
     }
 }
 }

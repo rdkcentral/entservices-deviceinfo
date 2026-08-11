@@ -27,6 +27,7 @@
 
 #include <com/com.h>
 #include <core/core.h>
+#include <mutex>
 
 namespace WPEFramework {
 namespace Plugin {
@@ -64,12 +65,17 @@ namespace Plugin {
         Core::hresult WifiMac(WiFiMac& wiFiMa) const override;
         Core::hresult EstbIp(StbIp& stbIp) const override;
         Core::hresult SupportedAudioPorts(RPC::IStringIterator*& supportedAudioPorts, bool& success) const override;
+        Core::hresult OsName(string& osName) const override;
+        Core::hresult OsName(const string& osName) override;
+        Core::hresult OsVersion(string& osVersion) const override;
+        Core::hresult OsVersion(const string& osVersion) override;
 
         // IConfiguration interface
         uint32_t Configure(PluginHost::IShell* service) override;
 
     private:
         PluginHost::IShell* _service;
+        mutable std::mutex _osPropertiesMutex;
     };
 }
 }
