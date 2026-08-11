@@ -1702,6 +1702,19 @@ TEST_F(DeviceInfoTest, OsName_WriteSpecialCharacters_ReadBackCorrectly)
     EXPECT_EQ(response, _T("\"RDK-Linux_v2\""));
 }
 
+// Diagnostic: bypasses JSON-RPC entirely and calls the real DeviceInfoImplementation
+// directly to isolate whether the C++ getter/setter logic works on its own,
+// independent of the generated JSON-RPC glue (JDeviceInfo).
+TEST_F(DeviceInfoTest, OsName_DirectImplementation_WriteThenRead_ReturnsSameValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, deviceInfoImplementation->OsName(string("RDKLinux")));
+
+    string osName;
+    const Plugin::DeviceInfoImplementation* constImpl = &(*deviceInfoImplementation);
+    EXPECT_EQ(Core::ERROR_NONE, constImpl->OsName(osName));
+    EXPECT_EQ(osName, "RDKLinux");
+}
+
 TEST_F(DeviceInfoTest, OsVersion_Read_WhenNoFileExists_ReturnsEmpty)
 {
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
@@ -1779,6 +1792,19 @@ TEST_F(DeviceInfoTest, OsVersion_WriteSemanticVersion_ReadBackCorrectly)
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
     EXPECT_EQ(response, _T("\"5.15.102-rdk\""));
+}
+
+// Diagnostic: bypasses JSON-RPC entirely and calls the real DeviceInfoImplementation
+// directly to isolate whether the C++ getter/setter logic works on its own,
+// independent of the generated JSON-RPC glue (JDeviceInfo).
+TEST_F(DeviceInfoTest, OsVersion_DirectImplementation_WriteThenRead_ReturnsSameValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, deviceInfoImplementation->OsVersion(string("5.4.0")));
+
+    string osVersion;
+    const Plugin::DeviceInfoImplementation* constImpl = &(*deviceInfoImplementation);
+    EXPECT_EQ(Core::ERROR_NONE, constImpl->OsVersion(osVersion));
+    EXPECT_EQ(osVersion, "5.4.0");
 }
 
 TEST_F(DeviceInfoTest, OsNameAndVersion_InterleavedWriteRead_BothPersistIndependently)
