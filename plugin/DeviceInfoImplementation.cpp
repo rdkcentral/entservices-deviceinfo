@@ -29,6 +29,10 @@
 
 #include <fstream>
 #include <regex>
+#include <cstdio>
+
+#define OS_DETAILS_FILE "/opt/persistent/osdetails.info"
+#define OS_DETAILS_TMP_FILE "/opt/persistent/osdetails.info.tmp"
 
 namespace WPEFramework {
 namespace Plugin {
@@ -89,7 +93,25 @@ namespace Plugin {
 
             return result;
         }
-        
+
+        uint32_t WriteOsDetails(const string& osName, const string& osVersion)
+        {
+            std::ofstream tmp(OS_DETAILS_TMP_FILE);
+            if (!tmp.is_open()) {
+                LOGERR("Failed to open osdetails tmp file for writing");
+                return Core::ERROR_GENERAL;
+            }
+            tmp << "os_name=" << osName << '\n'
+                << "os_version=" << osVersion << '\n';
+            tmp.close();
+            if (std::rename(OS_DETAILS_TMP_FILE, OS_DETAILS_FILE) != 0) {
+                std::remove(OS_DETAILS_TMP_FILE);
+                LOGERR("Failed to atomically write osdetails.info");
+                return Core::ERROR_GENERAL;
+            }
+            return Core::ERROR_NONE;
+        }
+
     }
 
     SERVICE_REGISTRATION(DeviceInfoImplementation, 1, 0);
@@ -488,6 +510,40 @@ namespace Plugin {
         }
 
         return result;
+    }
+
+    // OS Properties Implementation (Thunder property pattern)
+
+    Core::hresult DeviceInfoImplementation::OsName(string& osName) const
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        osName.clear();
+        GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), osName);
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsName(const string& osName)
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        string curVersion;
+        GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), curVersion);
+        return WriteOsDetails(osName, curVersion);
+    }
+
+    Core::hresult DeviceInfoImplementation::OsVersion(string& osVersion) const
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        osVersion.clear();
+        GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), osVersion);
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsVersion(const string& osVersion)
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        string curName;
+        GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), curName);
+        return WriteOsDetails(curName, osVersion);
     }
 }
 }
