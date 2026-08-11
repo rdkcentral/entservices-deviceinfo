@@ -89,6 +89,9 @@ protected:
         , handler(*plugin)
         , INIT_CONX(1, 0)
     {
+        if (0 != system("mkdir -p /opt/persistent")) { /* do nothing */ }
+        std::remove("/opt/persistent/osdetails.info");
+
         p_iarmBusImplMock = new NiceMock<IarmBusImplMock>;
         IarmBus::setImpl(p_iarmBusImplMock);
 
@@ -1620,315 +1623,206 @@ TEST_F(DeviceInfoTest, Information_Success)
     EXPECT_EQ(info, "The DeviceInfo plugin allows retrieving of various device-related information.");
 }
 
-TEST_F(DeviceInfoTest, OsName_Get_ReturnsEmptyString_WhenFileNotExists)
+TEST_F(DeviceInfoTest, OsName_Read_WhenNoFileExists_ReturnsEmpty)
 {
-    unlink("/opt/persistent/osdetails.info");
-
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
     EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
 }
 
-TEST_F(DeviceInfoTest, OsName_Get_ReturnsPersistedValue)
+TEST_F(DeviceInfoTest, OsName_Write_ThenRead_ReturnsSameValue)
 {
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info");
-    file << "os_name=RDK\nos_version=8.1\n";
-    file.close();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDKLinux\"}"), response));
 
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"RDK\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
+    EXPECT_EQ(response, _T("{\"osname\":\"RDKLinux\"}"));
 }
 
-TEST_F(DeviceInfoTest, OsName_Get_ReturnsEmptyString_WhenKeyMissingInFile)
+TEST_F(DeviceInfoTest, OsName_WriteMultipleTimes_LastWriteWins)
 {
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info");
-    file << "os_version=8.1\n";
-    file.close();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"FirstName\"}"), response));
 
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"SecondName\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"ThirdName\"}"), response));
+
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
+    EXPECT_EQ(response, _T("{\"osname\":\"ThirdName\"}"));
 }
 
-TEST_F(DeviceInfoTest, OsName_Set_Success_CreatesFileWhenNotExists)
+TEST_F(DeviceInfoTest, OsName_WriteEmptyString_OverwritesPreviousValue)
 {
-    unlink("/opt/persistent/osdetails.info");
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDKLinux\"}"), response));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK\"}"), response));
-
-    std::ifstream file("/opt/persistent/osdetails.info");
-    EXPECT_TRUE(file.is_open());
-    file.close();
-    unlink("/opt/persistent/osdetails.info");
-}
-
-TEST_F(DeviceInfoTest, OsName_Set_Success_ValueReadableAfterSet)
-{
-    unlink("/opt/persistent/osdetails.info");
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"Entertainment OS\"}"), response));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"Entertainment OS\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
-}
-
-TEST_F(DeviceInfoTest, OsName_Set_Success_UpdatesExistingValue)
-{
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info");
-    file << "os_name=OldName\nos_version=1.0\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"NewName\"}"), response));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"NewName\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
-}
-
-TEST_F(DeviceInfoTest, OsName_Set_PreservesExistingOsVersion)
-{
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info");
-    file << "os_name=OldName\nos_version=9.9\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"NewName\"}"), response));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"9.9\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
-}
-
-TEST_F(DeviceInfoTest, OsName_Set_Success_EmptyString)
-{
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info");
-    file << "os_name=RDK\nos_version=8.1\n";
-    file.close();
-
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"\"}"), response));
+
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
     EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, OsName_Set_Failure_WhenDirectoryUnwritable)
+TEST_F(DeviceInfoTest, OsName_WriteAndRead_DoesNotCorruptOsVersion)
 {
-    (void)system("mkdir -p /opt/persistent/osdetails.info.tmp");
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"5.4.0\"}"), response));
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK\"}"), response));
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDKLinux\"}"), response));
 
-    (void)system("rmdir /opt/persistent/osdetails.info.tmp");
-}
-
-TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsEmptyString_WhenFileNotExists)
-{
-    unlink("/opt/persistent/osdetails.info");
-
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
-}
+    EXPECT_EQ(response, _T("{\"osversion\":\"5.4.0\"}"));
 
-TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsPersistedValue)
-{
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info");
-    file << "os_name=RDK\nos_version=8.1\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"8.1\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
-}
-
-TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsEmptyString_WhenKeyMissingInFile)
-{
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info");
-    file << "os_name=RDK\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
-}
-
-TEST_F(DeviceInfoTest, OsVersion_Set_Success_CreatesFileWhenNotExists)
-{
-    unlink("/opt/persistent/osdetails.info");
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"8.1\"}"), response));
-
-    std::ifstream file("/opt/persistent/osdetails.info");
-    EXPECT_TRUE(file.is_open());
-    file.close();
-    unlink("/opt/persistent/osdetails.info");
-}
-
-TEST_F(DeviceInfoTest, OsVersion_Set_Success_ValueReadableAfterSet)
-{
-    unlink("/opt/persistent/osdetails.info");
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"1.3\"}"), response));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"1.3\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
-}
-
-TEST_F(DeviceInfoTest, OsVersion_Set_Success_UpdatesExistingValue)
-{
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info");
-    file << "os_name=RDK\nos_version=1.0\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"2.0\"}"), response));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"2.0\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
-}
-
-TEST_F(DeviceInfoTest, OsVersion_Set_PreservesExistingOsName)
-{
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info");
-    file << "os_name=Sky OS\nos_version=1.0\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"2.0\"}"), response));
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"Sky OS\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
+    EXPECT_EQ(response, _T("{\"osname\":\"RDKLinux\"}"));
 }
 
-TEST_F(DeviceInfoTest, OsVersion_Set_Success_EmptyString)
+TEST_F(DeviceInfoTest, OsName_WriteLongString_ReadBackCorrectly)
 {
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info");
-    file << "os_name=RDK\nos_version=8.1\n";
-    file.close();
+    const string longName(512, 'A');
+    const string writePayload = _T("{\"osname\":\"") + longName + _T("\"}");
 
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), writePayload, response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_TRUE(response.find(longName) != string::npos);
+}
+
+TEST_F(DeviceInfoTest, OsName_WriteSpecialCharacters_ReadBackCorrectly)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK-Linux_v2\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osname\":\"RDK-Linux_v2\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Read_WhenNoFileExists_ReturnsEmpty)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Write_ThenRead_ReturnsSameValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"5.4.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"5.4.0\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_WriteMultipleTimes_LastWriteWins)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"1.0.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"2.0.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"3.0.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"3.0.0\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_WriteEmptyString_OverwritesPreviousValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"5.4.0\"}"), response));
+
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"\"}"), response));
+
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
     EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
 }
 
-TEST_F(DeviceInfoTest, OsVersion_Set_Failure_WhenDirectoryUnwritable)
+TEST_F(DeviceInfoTest, OsVersion_WriteAndRead_DoesNotCorruptOsName)
 {
-    (void)system("mkdir -p /opt/persistent/osdetails.info.tmp");
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDKLinux\"}"), response));
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"8.1\"}"), response));
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"5.4.0\"}"), response));
 
-    (void)system("rmdir /opt/persistent/osdetails.info.tmp");
-}
-
-TEST_F(DeviceInfoTest, OsProperties_BothPropertiesPersistIndependently)
-{
-    unlink("/opt/persistent/osdetails.info");
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK-E\"}"), response));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"2.0\"}"), response));
-
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"RDK-E\"}"));
+    EXPECT_EQ(response, _T("{\"osname\":\"RDKLinux\"}"));
 
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"2.0\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
+    EXPECT_EQ(response, _T("{\"osversion\":\"5.4.0\"}"));
 }
 
-TEST_F(DeviceInfoTest, OsProperties_FileContainsBothKeysAfterSetBoth)
+TEST_F(DeviceInfoTest, OsVersion_WriteLongString_ReadBackCorrectly)
 {
-    unlink("/opt/persistent/osdetails.info");
+    const string longVersion(512, '9');
+    const string writePayload = _T("{\"osversion\":\"") + longVersion + _T("\"}");
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"Horizon OS\"}"), response));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"3.5\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), writePayload, response));
 
-    std::ifstream file("/opt/persistent/osdetails.info");
-    string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    file.close();
-
-    EXPECT_TRUE(content.find("os_name=Horizon OS") != string::npos);
-    EXPECT_TRUE(content.find("os_version=3.5") != string::npos);
-
-    unlink("/opt/persistent/osdetails.info");
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_TRUE(response.find(longVersion) != string::npos);
 }
 
-TEST_F(DeviceInfoTest, OsName_Get_ReturnsEmptyString_WhenFileIsEmpty)
+TEST_F(DeviceInfoTest, OsVersion_WriteSemanticVersion_ReadBackCorrectly)
 {
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info", std::ios::trunc);
-    file.close();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"5.15.102-rdk\"}"), response));
 
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osversion\":\"5.15.102-rdk\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsNameAndVersion_InterleavedWriteRead_BothPersistIndependently)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"AlphaOS\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"1.0.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"BetaOS\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"2.0.0\"}"), response));
+
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"osname\":\"BetaOS\"}"));
 
-    unlink("/opt/persistent/osdetails.info");
-}
-
-TEST_F(DeviceInfoTest, OsVersion_Get_ReturnsEmptyString_WhenFileIsEmpty)
-{
-    (void)system("mkdir -p /opt/persistent");
-    std::ofstream file("/opt/persistent/osdetails.info", std::ios::trunc);
-    file.close();
-
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
+    EXPECT_EQ(response, _T("{\"osversion\":\"2.0.0\"}"));
 }
 
-TEST_F(DeviceInfoTest, OsName_Set_Success_VersionWithDotNotation)
+TEST_F(DeviceInfoTest, OsNameAndVersion_WriteNameOnly_VersionUnaffected)
 {
-    unlink("/opt/persistent/osdetails.info");
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"4.0.0\"}"), response));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"1.2.3.4\"}"), response));
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDKLinux\"}"), response));
+
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"1.2.3.4\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
+    EXPECT_EQ(response, _T("{\"osversion\":\"4.0.0\"}"));
 }
 
-TEST_F(DeviceInfoTest, OsName_Set_Success_OverwriteMultipleTimes)
+TEST_F(DeviceInfoTest, OsNameAndVersion_WriteVersionOnly_NameUnaffected)
 {
-    unlink("/opt/persistent/osdetails.info");
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDKLinux\"}"), response));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK\"}"), response));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK-V\"}"), response));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osname\":\"RDK-E\"}"), response));
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"5.4.0\"}"), response));
 
+    response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"RDK-E\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
+    EXPECT_EQ(response, _T("{\"osname\":\"RDKLinux\"}"));
 }
-
-TEST_F(DeviceInfoTest, OsVersion_Set_Success_OverwriteMultipleTimes)
-{
-    unlink("/opt/persistent/osdetails.info");
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"1.0\"}"), response));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"2.0\"}"), response));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osversion\":\"3.0\"}"), response));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"3.0\"}"));
-
-    unlink("/opt/persistent/osdetails.info");
-}
-
