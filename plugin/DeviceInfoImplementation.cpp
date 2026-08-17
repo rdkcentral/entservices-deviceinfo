@@ -269,6 +269,20 @@ namespace Plugin {
         
         if (result == Core::ERROR_NONE )
         {
+            // Extract middleware version from imagename, e.g.:
+            // ELTE11MWR_8.3p9s1_DEV              -> 8.3p9s1
+            // COESST11AEI_E032.031.00.8.6p99s2_DEV -> 8.6p99s2
+            // SKTL11MEIIT_DEV_rel-15567_20260805034710_8.5.3.7B1 -> 0.0
+            {
+                std::smatch mwMatch;
+                if (std::regex_search(firmwareVersionInfo.imagename, mwMatch,
+                        std::regex(R"(_(?:[A-Za-z][^_]*?)?(\d+\.\d+[^.\s_]+)(?:_|$))"))) {
+                    firmwareVersionInfo.middleware = mwMatch[1];
+                } else {
+                    firmwareVersionInfo.middleware = "0.0";
+                }
+            }
+
             if (GetFileRegex(_T("/version.txt"), std::regex("^SDK_VERSION=([^\\n]+)$"), firmwareVersionInfo.sdk) != Core::ERROR_NONE)
             {
                 firmwareVersionInfo.sdk = "";
