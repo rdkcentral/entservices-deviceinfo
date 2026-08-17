@@ -274,7 +274,7 @@ TEST_F(DeviceInfoJsonRpcInitializedTest, firmwareversion)
     file.close();
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"CUSTOM5_VBN_2203_sprint_20220331225312sdy_NG\",\"sdk\":\"17.3\",\"mediarite\":\"8.3.53\",\"yocto\":\"dunfell\"}"));
+    EXPECT_EQ(response, _T("{\"imagename\":\"CUSTOM5_VBN_2203_sprint_20220331225312sdy_NG\",\"middleware\":\"0.0\",\"sdk\":\"17.3\",\"mediarite\":\"8.3.53\",\"yocto\":\"dunfell\"}"));
 }
 
 TEST_F(DeviceInfoJsonRpcInitializedTest, DISABLED_make)
