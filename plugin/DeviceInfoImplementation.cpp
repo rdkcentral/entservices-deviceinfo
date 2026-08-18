@@ -504,29 +504,45 @@ namespace Plugin {
         return result;
     }
 
-    Core::hresult DeviceInfoImplementation::DeviceID(DeviceIdInfo& deviceIdInfo) const
+    Core::hresult DeviceInfoImplementation::DeviceId(DeviceIdInfo& deviceIdInfo) const
     {
-        DeviceSerialNo deviceSerialNo;
-        Core::hresult result = Core::ERROR_NONE;
+        if (_deviceIDCached) {
+            deviceIdInfo.deviceId = _cachedDeviceID;
+            return Core::ERROR_NONE;
+        }
 
-        result = SerialNumber(deviceSerialNo);
+        DeviceSerialNo deviceSerialNo;
+        Core::hresult result = SerialNumber(deviceSerialNo);
         if (result == Core::ERROR_NONE) {
             const string& serialNumber = deviceSerialNo.serialnumber;
             bool isNumericOnly = !serialNumber.empty() &&
                 std::all_of(serialNumber.begin(), serialNumber.end(),
                     [](unsigned char c) { return std::isdigit(c); });
 
-            // if the Device Serial Number is numeric only, then we will get the deviceID from MfgSerialNumber.
             // if the Device Serial Number is alphanumeric, then we will return the serial number as deviceID.
-            if (isNumericOnly) {
-                if (GetMFRData(mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER, deviceIdInfo.deviceID) != Core::ERROR_NONE) {
-                    deviceIdInfo.deviceID = "";
-                }
+            // else we will get the deviceID from MfgSerialNumber.
+            if (!isNumericOnly) {
+                deviceIdInfo.deviceId = serialNumber;
             } else {
-                deviceIdInfo.deviceID = serialNumber;
+                if (GetMFRData(mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER, deviceIdInfo.deviceId) != Core::ERROR_NONE) {
+                    deviceIdInfo.deviceId = "";
+                }
             }
+
+            _cachedDeviceID = deviceIdInfo.deviceId;
+            _deviceIDCached = true;
         }
 
+        return result;
+    }
+
+    Core::hresult DeviceInfoImplementation::HardwareId(HardwareIdInfo& hardwareIdInfo) const
+    {
+        DeviceIdInfo deviceIdInfo;
+        Core::hresult result = DeviceId(deviceIdInfo);
+        if (result == Core::ERROR_NONE) {
+            hardwareIdInfo.hardwareId = deviceIdInfo.deviceId.substr(0, 6);
+        }
         return result;
     }
 }

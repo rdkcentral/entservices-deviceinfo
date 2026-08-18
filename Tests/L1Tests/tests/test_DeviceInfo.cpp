@@ -1699,7 +1699,7 @@ TEST_F(DeviceInfoTest, DeviceID_NumericSerial_UsesMfgSerialNumber)
             }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceid"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"deviceID\":\"IP09SK925314001D0\"}"));
+    EXPECT_EQ(response, _T("{\"deviceId\":\"IP09SK925314001D0\"}"));
 }
 
 TEST_F(DeviceInfoTest, DeviceID_AlphanumericSerial_UsesSerialNumber)
@@ -1721,7 +1721,7 @@ TEST_F(DeviceInfoTest, DeviceID_AlphanumericSerial_UsesSerialNumber)
             }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceid"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"deviceID\":\"EB21163216C000024\"}"));
+    EXPECT_EQ(response, _T("{\"deviceId\":\"EB21163216C000024\"}"));
 }
 
 TEST_F(DeviceInfoTest, DeviceID_NumericSerial_MfgSerialFails_ReturnsEmpty)
@@ -1744,7 +1744,7 @@ TEST_F(DeviceInfoTest, DeviceID_NumericSerial_MfgSerialFails_ReturnsEmpty)
             }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceid"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"deviceID\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"deviceId\":\"\"}"));
 }
 
 TEST_F(DeviceInfoTest, DeviceID_SerialNumberFails_ReturnsError)
@@ -1757,4 +1757,100 @@ TEST_F(DeviceInfoTest, DeviceID_SerialNumberFails_ReturnsError)
         .WillRepeatedly(Return(WDMP_FAILURE));
 
     EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("deviceid"), _T(""), response));
+}
+
+// =========== HardwareId Tests ===========
+
+TEST_F(DeviceInfoTest, HardwareID_Returns_First6_Alphanumeric)
+{
+    // deviceId = "EB21163216C000024" -> hardwareId = "EB2116"
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(::testing::Invoke(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        strncpy(param->buffer, "EB21163216C000024", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            }));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareid"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"hardwareId\":\"EB2116\"}"));
+}
+
+TEST_F(DeviceInfoTest, HardwareID_Returns_First6_MfgSerial)
+{
+    // deviceId = "IP09SK925314001D0" (from mfg serial) -> hardwareId = "IP09SK"
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(::testing::Invoke(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        strncpy(param->buffer, "84725041828384", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    if (param->type == mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER) {
+                        strncpy(param->buffer, "IP09SK925314001D0", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            }));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareid"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"hardwareId\":\"IP09SK\"}"));
+}
+
+TEST_F(DeviceInfoTest, HardwareID_Empty_WhenDeviceIdEmpty)
+{
+    // Numeric serial, mfg serial fails -> deviceId = "" -> hardwareId = ""
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(::testing::Invoke(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        strncpy(param->buffer, "84725041828384", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            }));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareid"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"hardwareId\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, HardwareID_Short_DeviceId)
+{
+    // deviceId shorter than 6 chars -> hardwareId equals full deviceId
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(::testing::Invoke(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        strncpy(param->buffer, "AB12", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            }));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareid"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"hardwareId\":\"AB12\"}"));
 }
