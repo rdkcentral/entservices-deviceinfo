@@ -503,5 +503,31 @@ namespace Plugin {
 
         return result;
     }
+
+    Core::hresult DeviceInfoImplementation::DeviceID(DeviceIdInfo& deviceIdInfo) const
+    {
+        DeviceSerialNo deviceSerialNo;
+        Core::hresult result = Core::ERROR_NONE;
+
+        result = SerialNumber(deviceSerialNo);
+        if (result == Core::ERROR_NONE) {
+            const string& serialNumber = deviceSerialNo.serialnumber;
+            bool isNumericOnly = !serialNumber.empty() &&
+                std::all_of(serialNumber.begin(), serialNumber.end(),
+                    [](unsigned char c) { return std::isdigit(c); });
+
+            // if the Device Serial Number is numeric only, then we will get the deviceID from MfgSerialNumber.
+            // if the Device Serial Number is alphanumeric, then we will return the serial number as deviceID.
+            if (isNumericOnly) {
+                if (GetMFRData(mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER, deviceIdInfo.deviceID) != Core::ERROR_NONE) {
+                    deviceIdInfo.deviceID = "";
+                }
+            } else {
+                deviceIdInfo.deviceID = serialNumber;
+            }
+        }
+
+        return result;
+    }
 }
 }
