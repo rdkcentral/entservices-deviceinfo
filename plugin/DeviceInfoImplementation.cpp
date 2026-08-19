@@ -524,8 +524,13 @@ namespace Plugin {
             if (!isNumericOnly) {
                 deviceIdInfo.deviceId = serialNumber;
             } else {
-                if (GetMFRData(mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER, deviceIdInfo.deviceId) != Core::ERROR_NONE) {
-                    deviceIdInfo.deviceId = "";
+                string mfgHwid;
+                if (GetMFRData(mfrSERIALIZED_TYPE_HWID, mfgHwid) == Core::ERROR_NONE && !mfgHwid.empty()) {
+                    deviceIdInfo.deviceId = mfgHwid + "000" + serialNumber.substr(5,7);
+                } else {
+                    if (GetMFRData(mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER, deviceIdInfo.deviceId) != Core::ERROR_NONE) {
+                        deviceIdInfo.deviceId = serialNumber;
+                    }
                 }
             }
 
