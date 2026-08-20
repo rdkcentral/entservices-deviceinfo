@@ -2181,7 +2181,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_ComposesFrom
             });
 
     JsonObject getResults;
-    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId@0", getResults);
     EXPECT_EQ(Core::ERROR_NONE, status);
     if (status == Core::ERROR_NONE) {
         EXPECT_TRUE(getResults.HasLabel("deviceId"));
@@ -2213,7 +2213,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_AlphanumericSerial_UsesSer
             });
 
     JsonObject getResults;
-    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId@0", getResults);
     EXPECT_EQ(Core::ERROR_NONE, status);
     if (status == Core::ERROR_NONE) {
         EXPECT_TRUE(getResults.HasLabel("deviceId"));
@@ -2245,7 +2245,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_AllMfrFails_
             });
 
     JsonObject getResults;
-    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId@0", getResults);
     EXPECT_EQ(Core::ERROR_NONE, status);
     if (status == Core::ERROR_NONE) {
         EXPECT_TRUE(getResults.HasLabel("deviceId"));
@@ -2373,7 +2373,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_HardwareID_ReturnsFirst6OfDeviceId)
             });
 
     JsonObject getResults;
-    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "hardwareId", getResults);
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "hardwareId@0", getResults);
     EXPECT_EQ(Core::ERROR_NONE, status);
     if (status == Core::ERROR_NONE) {
         EXPECT_TRUE(getResults.HasLabel("hardwareId"));
