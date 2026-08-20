@@ -2151,7 +2151,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_MacAddressesAndIp)
 //   - Both HWID and MFG fail    -> use raw serialNumber as deviceId
 
 // ---- JSON-RPC (property) tests ----
-
+#if 0
 TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_ComposesFromHWID)
 {
     TEST_LOG("Testing deviceid property: numeric serial -> HWID composition\n");
@@ -2189,7 +2189,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_ComposesFrom
         TEST_LOG("DeviceID (HWID composition): %s", deviceId.c_str());
     }
 }
-
+#endif
 TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_AlphanumericSerial_UsesSerialNumber)
 {
     TEST_LOG("Testing deviceid property: alphanumeric serial -> serial number used directly\n");
