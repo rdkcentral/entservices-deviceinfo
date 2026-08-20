@@ -1723,7 +1723,7 @@ TEST_F(DeviceInfoTest, DeviceID_AlphanumericSerial_UsesSerialNumber)
                 return IARM_RESULT_INVALID_PARAM;
             }));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceid"), _T(""), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceId"), _T(""), response));
     EXPECT_EQ(response, _T("{\"deviceId\":\"EB21163216C000024\"}"));
 }
 
