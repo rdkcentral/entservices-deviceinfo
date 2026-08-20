@@ -2151,7 +2151,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_MacAddressesAndIp)
 //   - Both HWID and MFG fail    -> use raw serialNumber as deviceId
 
 // ---- JSON-RPC (property) tests ----
-#if 0
+
 TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_ComposesFromHWID)
 {
     TEST_LOG("Testing deviceid property: numeric serial -> HWID composition\n");
@@ -2180,7 +2180,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_ComposesFrom
             });
 
     JsonObject getResults;
-    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId@0", getResults);
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
     EXPECT_EQ(Core::ERROR_NONE, status);
     if (status == Core::ERROR_NONE) {
         EXPECT_TRUE(getResults.HasLabel("deviceId"));
@@ -2189,7 +2189,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_ComposesFrom
         TEST_LOG("DeviceID (HWID composition): %s", deviceId.c_str());
     }
 }
-#endif
+
 TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_AlphanumericSerial_UsesSerialNumber)
 {
     TEST_LOG("Testing deviceid property: alphanumeric serial -> serial number used directly\n");
@@ -2211,7 +2211,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_AlphanumericSerial_UsesSer
             });
 
     JsonObject getResults;
-    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId@0", getResults);
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
     EXPECT_EQ(Core::ERROR_NONE, status);
     if (status == Core::ERROR_NONE) {
         EXPECT_TRUE(getResults.HasLabel("deviceId"));
@@ -2220,7 +2220,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_AlphanumericSerial_UsesSer
         TEST_LOG("DeviceID (alphanumeric serial): %s", deviceId.c_str());
     }
 }
-#if 0
+
 TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_AllMfrFails_FallsBackToSerial)
 {
     TEST_LOG("Testing deviceid property: numeric serial, all MFR fail -> falls back to serialNumber\n");
@@ -2237,13 +2237,12 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_AllMfrFails_
                         return IARM_RESULT_SUCCESS;
                     }
                     // mfrSERIALIZED_TYPE_HWID and mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER both fail
-                    return IARM_RESULT_INVALID_PARAM;
                 }
-                return IARM_RESULT_SUCCESS;
+                return IARM_RESULT_INVALID_PARAM;
             });
 
     JsonObject getResults;
-    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId@0", getResults);
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
     EXPECT_EQ(Core::ERROR_NONE, status);
     if (status == Core::ERROR_NONE) {
         EXPECT_TRUE(getResults.HasLabel("deviceId"));
@@ -2334,9 +2333,8 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DeviceID_NumericSerial_AllMfrFails_F
                         return IARM_RESULT_SUCCESS;
                     }
                     // mfrSERIALIZED_TYPE_HWID and mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER both fail
-                    return IARM_RESULT_INVALID_PARAM;
                 }
-                return IARM_RESULT_SUCCESS;
+                return IARM_RESULT_INVALID_PARAM;
             });
 
     Exchange::IDeviceInfo::DeviceIdInfo deviceIdInfo;
@@ -2363,13 +2361,12 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_HardwareID_ReturnsFirst6OfDeviceId)
                         strncpy(param->buffer, str, sizeof(param->buffer));
                         return IARM_RESULT_SUCCESS;
                     }
-                    return IARM_RESULT_INVALID_PARAM;
                 }
-                return IARM_RESULT_SUCCESS;
+                return IARM_RESULT_INVALID_PARAM;
             });
 
     JsonObject getResults;
-    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "hardwareId@0", getResults);
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "hardwareId", getResults);
     EXPECT_EQ(Core::ERROR_NONE, status);
     if (status == Core::ERROR_NONE) {
         EXPECT_TRUE(getResults.HasLabel("hardwareId"));
@@ -2401,9 +2398,8 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_HardwareID_ReturnsFirst6_ComposedFro
                         strncpy(param->buffer, str, sizeof(param->buffer));
                         return IARM_RESULT_SUCCESS;
                     }
-                    return IARM_RESULT_INVALID_PARAM;
                 }
-                return IARM_RESULT_SUCCESS;
+                return IARM_RESULT_INVALID_PARAM;
             });
 
     Exchange::IDeviceInfo::HardwareIdInfo hardwareIdInfo;
@@ -2430,9 +2426,8 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_HardwareID_AllMfrFail_FallsBackToSer
                         return IARM_RESULT_SUCCESS;
                     }
                     // mfrSERIALIZED_TYPE_HWID and mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER both fail
-                    return IARM_RESULT_INVALID_PARAM;
                 }
-                return IARM_RESULT_SUCCESS;
+                return IARM_RESULT_INVALID_PARAM;
             });
 
     Exchange::IDeviceInfo::HardwareIdInfo hardwareIdInfo;
@@ -2441,4 +2436,3 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_HardwareID_AllMfrFail_FallsBackToSer
     EXPECT_EQ(hardwareIdInfo.hardwareId, "847250");
     TEST_LOG("HardwareID (all MFR failed, fallback serial prefix): '%s'", hardwareIdInfo.hardwareId.c_str());
 }
-#endif
