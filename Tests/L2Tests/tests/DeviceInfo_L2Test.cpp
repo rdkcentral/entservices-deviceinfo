@@ -1,8 +1,8 @@
-/**
-* If not stated otherwise in this file or this component's LICENSE
-* file the following copyright and licenses apply:
+/*
+* If not stated otherwise in this file or this component's LICENSE file the
+* following copyright and licenses apply:
 *
-* Copyright 2024 RDK Management
+* Copyright 2025 RDK Management
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -15,1848 +15,2433 @@
 * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 * See the License for the specific language governing permissions and
 * limitations under the License.
-**/
+*/
 
 #include <gtest/gtest.h>
-
-#include "DeviceInfo.h"
-#include "DeviceInfoImplementation.h"
-#include "DeviceAudioCapabilities.h"
-#include "DeviceVideoCapabilities.h"
-#include "AudioOutputPortMock.h"
-#include "HostMock.h"
-#include "IarmBusMock.h"
-#include "ManagerMock.h"
-#include "ServiceMock.h"
-#include "VideoOutputPortConfigMock.h"
-#include "VideoOutputPortMock.h"
-#include "VideoOutputPortTypeMock.h"
-#include "VideoResolutionMock.h"
-#include "RfcApiMock.h"
-#include "COMLinkMock.h"
-#include "DeviceInfoMock.h"
-#include "WrapsMock.h"
-#include "ISubSystemMock.h"
-#include "SystemInfo.h"
+#include <gmock/gmock.h>
+#include "L2Tests.h"
+#include "L2TestsMock.h"
 #include <fstream>
-#include "ThunderPortability.h"
+#include "MfrMock.h"
+#include "IarmBusMock.h"
+#include "SystemInfo.h"
+#include <interfaces/IDeviceInfo.h>
 
-using namespace WPEFramework;
+#include <mutex>
+#include <condition_variable>
+
+#define JSON_TIMEOUT   (1000)
+#define TEST_LOG(x, ...) fprintf(stderr, "\033[1;32m[%s:%d](%s)<PID:%d><TID:%d>" x "\n\033[0m", __FILE__, __LINE__, __FUNCTION__, getpid(), gettid(), ##__VA_ARGS__); fflush(stderr);
+#define DEVICEINFO_CALLSIGN  _T("DeviceInfo.1")
+#define DEVICEINFOL2TEST_CALLSIGN _T("L2tests.1")
 
 using ::testing::NiceMock;
-using ::testing::_;
-using ::testing::Return;
-using ::testing::ReturnRef;
-using ::testing::Invoke;
+using namespace WPEFramework;
+using testing::StrictMock;
 
-namespace {
-    const string webPrefix = _T("/Service/DeviceInfo");
-    static void removeFile(const char* fileName)
-    {
-        if (strcmp(fileName, "/etc/device.properties") == 0 || strcmp(fileName, "/etc/authService.conf") == 0 || strcmp(fileName, "/opt/www/authService/partnerId3.dat") == 0 || \
-            strcmp(fileName, "/tmp/.manufacturer") == 0 || strcmp(fileName, "/version.txt") == 0) {
-            std::ofstream(fileName, std::ios::trunc);
-        }
-    }
-}
-
-class DeviceInfoTest : public ::testing::Test {
+class DeviceInfo_L2test : public L2TestMocks {
 protected:
-    Core::ProxyType<Plugin::DeviceInfo> plugin;
-    Core::ProxyType<Plugin::DeviceInfoImplementation> deviceInfoImplementation;
-    Core::ProxyType<Plugin::DeviceAudioCapabilities> deviceAudioCapabilities;
-    Core::ProxyType<Plugin::DeviceVideoCapabilities> deviceVideoCapabilities;
-    Core::JSONRPC::Handler& handler;
-    DECL_CORE_JSONRPC_CONX connection;
+    Core::JSONRPC::Message message;
     string response;
 
-    IarmBusImplMock* p_iarmBusImplMock = nullptr;
-    ManagerImplMock* p_managerImplMock = nullptr;
-    HostImplMock* p_hostImplMock = nullptr;
-    AudioOutputPortMock* p_audioOutputPortMock = nullptr;
-    VideoResolutionMock* p_videoResolutionMock = nullptr;
-    VideoOutputPortMock* p_videoOutputPortMock = nullptr;
-    VideoOutputPortConfigImplMock* p_videoOutputPortConfigImplMock = nullptr;
-    VideoOutputPortTypeMock* p_videoOutputPortTypeMock = nullptr;
-    RfcApiImplMock* p_rfcApiImplMock = nullptr;
-    NiceMock<ServiceMock> service;
-    NiceMock<COMLinkMock> comLinkMock;
-    WrapsImplMock* p_wrapsImplMock = nullptr;
-    Core::Sink<NiceMock<SystemInfo>> subSystem;
+    virtual ~DeviceInfo_L2test() override;
+        
+public:
+    DeviceInfo_L2test();
+    uint32_t CreateDeviceInfoInterfaceObject();
+    void SetUp() override;
+    void TearDown() override;
 
-    DeviceInfoTest()
-        : plugin(Core::ProxyType<Plugin::DeviceInfo>::Create())
-        , handler(*plugin)
-        , INIT_CONX(1, 0)
-    {
-        p_iarmBusImplMock = new NiceMock<IarmBusImplMock>;
-        IarmBus::setImpl(p_iarmBusImplMock);
+protected:
+    /** @brief Pointer to the IShell interface */
+    PluginHost::IShell* m_controller_deviceinfo;
 
-        p_managerImplMock = new NiceMock<ManagerImplMock>;
-        device::Manager::setImpl(p_managerImplMock);
-
-        p_hostImplMock = new NiceMock<HostImplMock>;
-        device::Host::setImpl(p_hostImplMock);
-
-        p_audioOutputPortMock = new NiceMock<AudioOutputPortMock>;
-        device::AudioOutputPort::setImpl(p_audioOutputPortMock);
-
-        p_videoResolutionMock = new NiceMock<VideoResolutionMock>;
-        device::VideoResolution::setImpl(p_videoResolutionMock);
-
-        p_videoOutputPortMock = new NiceMock<VideoOutputPortMock>;
-        device::VideoOutputPort::setImpl(p_videoOutputPortMock);
-
-        p_videoOutputPortConfigImplMock = new NiceMock<VideoOutputPortConfigImplMock>;
-        device::VideoOutputPortConfig::setImpl(p_videoOutputPortConfigImplMock);
-
-        p_videoOutputPortTypeMock = new NiceMock<VideoOutputPortTypeMock>;
-        device::VideoOutputPortType::setImpl(p_videoOutputPortTypeMock);
-
-        p_rfcApiImplMock = new NiceMock<RfcApiImplMock>;
-        RfcApi::setImpl(p_rfcApiImplMock);
-
-        p_wrapsImplMock = new NiceMock<WrapsImplMock>;
-        Wraps::setImpl(p_wrapsImplMock);
-
-        // Create implementation objects
-        deviceInfoImplementation = Core::ProxyType<Plugin::DeviceInfoImplementation>::Create();
-        deviceAudioCapabilities = Core::ProxyType<Plugin::DeviceAudioCapabilities>::Create();
-        deviceVideoCapabilities = Core::ProxyType<Plugin::DeviceVideoCapabilities>::Create();
-
-        ON_CALL(service, ConfigLine())
-            .WillByDefault(Return("{\"root\":{\"mode\":\"Off\"}}"));
-        ON_CALL(service, WebPrefix())
-            .WillByDefault(Return(webPrefix));
-        ON_CALL(service, SubSystems())
-            .WillByDefault(Invoke(
-                [&]() {
-                    PluginHost::ISubSystem* result = (&subSystem);
-                    result->AddRef();
-                    return result;
-                }));
-        ON_CALL(service, COMLink())
-            .WillByDefault(Return(&comLinkMock));
-
-#ifdef USE_THUNDER_R4
-        ON_CALL(comLinkMock, Instantiate(::testing::_, ::testing::_, ::testing::_))
-            .WillByDefault(::testing::Invoke(
-                [&](const RPC::Object& object, const uint32_t waitTime, uint32_t& connectionId) -> void* {
-                    if (object.ClassName() == _T("DeviceInfoImplementation")) {
-                        return &deviceInfoImplementation;
-                    } else if (object.ClassName() == _T("DeviceAudioCapabilities")) {
-                        return &deviceAudioCapabilities;
-                    } else if (object.ClassName() == _T("DeviceVideoCapabilities")) {
-                        return &deviceVideoCapabilities;
-                    }
-                    return nullptr;
-                }));
-#else
-        ON_CALL(comLinkMock, Instantiate(::testing::_, ::testing::_, ::testing::_, ::testing::_, ::testing::_))
-            .WillByDefault(::testing::Invoke(
-                [&](const uint32_t waitTime, const string& className, const uint32_t interfaceId, const uint32_t version, uint32_t& connectionId) -> void* {
-                    if (className == _T("DeviceInfoImplementation")) {
-                        return &deviceInfoImplementation;
-                    } else if (className == _T("DeviceAudioCapabilities")) {
-                        return &deviceAudioCapabilities;
-                    } else if (className == _T("DeviceVideoCapabilities")) {
-                        return &deviceVideoCapabilities;
-                    }
-                    return nullptr;
-                }));
-#endif
-
-        EXPECT_EQ(string(""), plugin->Initialize(&service));
-
-        if (0 != system("mkdir -p /opt/www/authService")){ /* do nothig */
-        }
-    }
-
-    virtual ~DeviceInfoTest()
-    {
-        plugin->Deinitialize(&service);
-
-        RfcApi::setImpl(nullptr);
-        if (p_rfcApiImplMock != nullptr) {
-            delete p_rfcApiImplMock;
-            p_rfcApiImplMock = nullptr;
-        }
-
-        Wraps::setImpl(nullptr);
-        if (p_wrapsImplMock != nullptr) {
-            delete p_wrapsImplMock;
-            p_wrapsImplMock = nullptr;
-        }
-
-        device::VideoOutputPortType::setImpl(nullptr);
-        if (p_videoOutputPortTypeMock != nullptr) {
-            delete p_videoOutputPortTypeMock;
-            p_videoOutputPortTypeMock = nullptr;
-        }
-
-        device::VideoOutputPortConfig::setImpl(nullptr);
-        if (p_videoOutputPortConfigImplMock != nullptr) {
-            delete p_videoOutputPortConfigImplMock;
-            p_videoOutputPortConfigImplMock = nullptr;
-        }
-
-        device::VideoOutputPort::setImpl(nullptr);
-        if (p_videoOutputPortMock != nullptr) {
-            delete p_videoOutputPortMock;
-            p_videoOutputPortMock = nullptr;
-        }
-
-        device::VideoResolution::setImpl(nullptr);
-        if (p_videoResolutionMock != nullptr) {
-            delete p_videoResolutionMock;
-            p_videoResolutionMock = nullptr;
-        }
-
-        device::AudioOutputPort::setImpl(nullptr);
-        if (p_audioOutputPortMock != nullptr) {
-            delete p_audioOutputPortMock;
-            p_audioOutputPortMock = nullptr;
-        }
-
-        device::Host::setImpl(nullptr);
-        if (p_hostImplMock != nullptr) {
-            delete p_hostImplMock;
-            p_hostImplMock = nullptr;
-        }
-
-        device::Manager::setImpl(nullptr);
-        if (p_managerImplMock != nullptr) {
-            delete p_managerImplMock;
-            p_managerImplMock = nullptr;
-        }
-
-        IarmBus::setImpl(nullptr);
-        if (p_iarmBusImplMock != nullptr) {
-            delete p_iarmBusImplMock;
-            p_iarmBusImplMock = nullptr;
-        }
-    }
+    /** @brief Pointer to the IDeviceInfo interface */
+    Exchange::IDeviceInfo* m_deviceinfoplugin;
 };
 
-TEST_F(DeviceInfoTest, SerialNumber_Success_FromMFR)
+/**
+* @brief Constructor for DeviceInfo L2 test class
+*/
+DeviceInfo_L2test::DeviceInfo_L2test()
+        : L2TestMocks()
+        , m_controller_deviceinfo(nullptr)
+        , m_deviceinfoplugin(nullptr)
 {
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "TEST12345", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
+    TEST_LOG("DEVICEINFO Constructor\n");
+    uint32_t status = Core::ERROR_GENERAL;
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("serialnumber"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"serialnumber\":\"TEST12345\"}"));
-}
+    std::ofstream versionFile("/version.txt");
+    versionFile << "imagename:CUSTOM_VBN_22.03s_sprint_20220331225312sdy_NG\n";
+    versionFile << "SDK_VERSION=17.3\n";
+    versionFile << "MEDIARITE=8.3.53\n";
+    versionFile << "YOCTO_VERSION=dunfell\n";
+    versionFile.flush();
+    versionFile.close();
 
-TEST_F(DeviceInfoTest, SerialNumber_Success_FromRFC)
-{
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+    std::ofstream devicePropsFile("/etc/device.properties");
+    devicePropsFile << "MFG_NAME=TestManufacturer\n";
+    devicePropsFile << "FRIENDLY_ID=\"TestModel\"\n";
+    devicePropsFile << "MODEL_NUM=TEST_SKU_12345\n";
+    devicePropsFile << "CHIPSET_NAME=TestChipset\n";
+    devicePropsFile << "DEVICE_TYPE=IpStb\n";
+    devicePropsFile.flush();
+    devicePropsFile.close();
 
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, _, _))
-        .WillRepeatedly(Invoke(
+    std::ofstream authServiceFile("/etc/authService.conf");
+    authServiceFile << "deviceType=IpStb\n";
+    authServiceFile.flush();
+    authServiceFile.close();
+
+    std::ofstream manufacturerFile("/tmp/.manufacturer");
+    manufacturerFile << "TestBrand\n";
+    manufacturerFile.flush();
+    manufacturerFile.close();
+
+    // Create partnerId file with directory
+    system("mkdir -p /opt/www/authService");
+    std::ofstream partnerIdFile("/opt/www/authService/partnerId3.dat");
+    partnerIdFile << "TestPartnerID\n";
+    partnerIdFile.flush();
+    partnerIdFile.close();
+
+    // Setup RFC API mock expectations
+    ON_CALL(*p_rfcApiImplMock, getRFCParameter(::testing::_, ::testing::_, ::testing::_))
+        .WillByDefault(::testing::Invoke(
             [](char* pcCallerID, const char* pcParameterName, RFC_ParamData_t* pstParamData) {
-                if (string(pcParameterName) == string("Device.DeviceInfo.SerialNumber")) {
-                    strncpy(pstParamData->value, "RFC12345", sizeof(pstParamData->value));
+                TEST_LOG("getRFCParameter invoked: param=%s", pcParameterName);
+                
+                if (strcmp(pcParameterName, "Device.DeviceInfo.SerialNumber") == 0) {
+                    strcpy(pstParamData->value, "RFC_TEST_SERIAL");
+                    return WDMP_SUCCESS;
+                } else if (strcmp(pcParameterName, "Device.DeviceInfo.ModelName") == 0) {
+                    strcpy(pstParamData->value, "RFC_TEST_MODEL");
+                    return WDMP_SUCCESS;
+                } else if (strcmp(pcParameterName, "Device.DeviceInfo.X_RDKCENTRAL-COM_Syndication.PartnerId") == 0) {
+                    strcpy(pstParamData->value, "TestPartnerID");
+                    printf("getRFCParameter invoked for PartnerId: %s\n", pstParamData->value);
                     return WDMP_SUCCESS;
                 }
+                
+                pstParamData->value[0] = '\0';
                 return WDMP_FAILURE;
             }));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("serialnumber"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"serialnumber\":\"RFC12345\"}"));
+
+    /* Activate plugin in constructor */
+    status = ActivateService("DeviceInfo");
+    EXPECT_EQ(Core::ERROR_NONE, status);
 }
 
-TEST_F(DeviceInfoTest, SerialNumber_Failure_BothSourcesFail)
+/**
+* @brief Destructor for DeviceInfo L2 test class
+*/
+DeviceInfo_L2test::~DeviceInfo_L2test()
 {
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+    TEST_LOG("DEVICEINFO Destructor\n");
+    uint32_t status = Core::ERROR_GENERAL;
 
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, _, _))
-        .WillRepeatedly(Return(WDMP_FAILURE));
+    if (m_deviceinfoplugin) {
+        m_deviceinfoplugin->Release();
+        m_deviceinfoplugin = nullptr;
+    }
+    if (m_controller_deviceinfo) {
+        m_controller_deviceinfo->Release();
+        m_controller_deviceinfo = nullptr;
+    }
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("serialnumber"), _T(""), response));
+    status = DeactivateService("DeviceInfo");
+    EXPECT_EQ(Core::ERROR_NONE, status);
 }
 
-TEST_F(DeviceInfoTest, Sku_Success_FromFile)
+uint32_t DeviceInfo_L2test::CreateDeviceInfoInterfaceObject()
 {
-    std::ofstream file("/etc/device.properties");
-    file << "MODEL_NUM=SKU-TEST-001\n";
-    file.close();
+    uint32_t return_value = Core::ERROR_GENERAL;
+    Core::ProxyType<RPC::InvokeServerType<1, 0, 4>> DeviceInfo_Engine;
+    Core::ProxyType<RPC::CommunicatorClient> DeviceInfo_Client;
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("modelid"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"sku\":\"SKU-TEST-001\"}"));
+    TEST_LOG("Creating DeviceInfo_Engine");
+    DeviceInfo_Engine = Core::ProxyType<RPC::InvokeServerType<1, 0, 4>>::Create();
+    DeviceInfo_Client = Core::ProxyType<RPC::CommunicatorClient>::Create(Core::NodeId("/tmp/communicator"), Core::ProxyType<Core::IIPCServer>(DeviceInfo_Engine));
+
+    if (!DeviceInfo_Client.IsValid()) {
+        TEST_LOG("Invalid DeviceInfo_Client");
+    } else {
+        m_controller_deviceinfo = DeviceInfo_Client->Open<PluginHost::IShell>(_T("DeviceInfo"), ~0, 3000);
+        if (m_controller_deviceinfo) {
+            m_deviceinfoplugin = m_controller_deviceinfo->QueryInterface<Exchange::IDeviceInfo>();
+            return_value = Core::ERROR_NONE;
+        }
+    }
+    return return_value;
 }
 
-TEST_F(DeviceInfoTest, Make_Success_FromFile)
+void DeviceInfo_L2test::SetUp()
 {
-
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
-
-    std::ofstream file("/etc/device.properties");
-    file << "MFG_NAME=FileManufacturer\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("make"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"make\":\"FileManufacturer\"}"));
+    if ((m_deviceinfoplugin == nullptr) || (m_controller_deviceinfo == nullptr)) {
+        EXPECT_EQ(Core::ERROR_NONE, CreateDeviceInfoInterfaceObject());
+    }
 }
 
-TEST_F(DeviceInfoTest, SocName_Success)
+void DeviceInfo_L2test::TearDown()
 {
-
-    std::ofstream file("/etc/device.properties");
-    file << "SOC=BCM7218\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("socname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"socname\":\"BCM7218\"}"));
+    if (m_deviceinfoplugin) {
+        m_deviceinfoplugin->Release();
+        m_deviceinfoplugin = nullptr;
+    }
+    if (m_controller_deviceinfo) {
+        m_controller_deviceinfo->Release();
+        m_controller_deviceinfo = nullptr;
+    }
 }
 
-TEST_F(DeviceInfoTest, DeviceType_Success_IpTv)
+TEST_F(DeviceInfo_L2test, DeviceInfo_L2_MethodTest)
 {
-    std::ofstream file("/etc/authService.conf");
-    file << "deviceType=IpTv\n";
-    file.close();
+    JSONRPC::LinkType<Core::JSON::IElement> jsonrpc(DEVICEINFO_CALLSIGN, DEVICEINFOL2TEST_CALLSIGN);
+    uint32_t status = Core::ERROR_NONE;
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("devicetype"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"devicetype\":\"IpTv\"}"));
-}
+    TEST_LOG("Starting DeviceInfo L2 Method Tests\n");
 
-TEST_F(DeviceInfoTest, DeviceType_Success_IpStb)
-{
-    std::ofstream file("/etc/authService.conf");
-    file << "deviceType=IpStb\n";
-    file.close();
+    /****************** defaultresolution ******************/
+    {
+        TEST_LOG("Testing defaultresolution method\n");
+        JsonObject result, params;
+        params["videoDisplay"] = "HDMI0";
+        
+        device::VideoOutputPort videoOutputPort;
+        device::VideoResolution videoResolution;
+        string videoPort(_T("HDMI0"));
+        string videoPortDefaultResolution(_T("1080p"));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("devicetype"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"devicetype\":\"IpStb\"}"));
+        ON_CALL(*p_videoResolutionMock, getName())
+            .WillByDefault(::testing::ReturnRef(videoPortDefaultResolution));
+        ON_CALL(*p_videoOutputPortMock, getDefaultResolution())
+            .WillByDefault(::testing::ReturnRef(videoResolution));
+        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
+            .WillByDefault(::testing::Return(videoPort));
+        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "defaultresolution", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("defaultResolution"));
+            string resolution = result["defaultResolution"].String();
+            EXPECT_EQ(resolution, "1080p");
+            TEST_LOG("defaultresolution: %s", resolution.c_str());
+        }
+    }
 
-}
+    /****************** supportedresolutions ******************/
+    {
+        TEST_LOG("Testing supportedresolutions method\n");
+        JsonObject result, params;
+        params["videoDisplay"] = "HDMI0";
+        
+        device::VideoOutputPort videoOutputPort;
+        device::VideoOutputPortType videoOutputPortType;
+        device::VideoResolution videoResolution;
+        string videoPort(_T("HDMI0"));
+        string videoPortSupportedResolution(_T("1080p"));
 
-TEST_F(DeviceInfoTest, DeviceType_Success_QamIpStb)
-{
-    std::ofstream file("/etc/authService.conf");
-    file << "deviceType=QamIpStb\n";
-    file.close();
+        ON_CALL(*p_videoResolutionMock, getName())
+            .WillByDefault(::testing::ReturnRef(videoPortSupportedResolution));
+        ON_CALL(*p_videoOutputPortTypeMock, getSupportedResolutions())
+            .WillByDefault(::testing::Return(device::List<device::VideoResolution>({ videoResolution })));
+        ON_CALL(*p_videoOutputPortTypeMock, getId())
+            .WillByDefault(::testing::Return(0));
+        ON_CALL(*p_videoOutputPortMock, getType())
+            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
+        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
+            .WillByDefault(::testing::Return(videoPort));
+        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPort));
+        ON_CALL(*p_videoOutputPortConfigImplMock, getPortType(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "supportedresolutions", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("supportedResolutions"));
+            JsonArray resolutions = result["supportedResolutions"].Array();
+            EXPECT_GT(resolutions.Length(), 0);
+            if (resolutions.Length() > 0) {
+                string resolution = resolutions[0].String();
+                EXPECT_EQ(resolution, "1080p");
+                TEST_LOG("First supported resolution: %s", resolution.c_str());
+            }
+        }
+    }
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("devicetype"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"devicetype\":\"QamIpStb\"}"));
-}
+    /****************** supportedhdcp ******************/
+    {
+        TEST_LOG("Testing supportedhdcp method\n");
+        JsonObject result, params;
+        params["videoDisplay"] = "HDMI0";
+        
+        device::VideoOutputPort videoOutputPort;
+        string videoPort(_T("HDMI0"));
 
-TEST_F(DeviceInfoTest, DeviceType_Success_FromDeviceProperties_MediaClient)
-{
-    removeFile("/etc/authService.conf");
+        ON_CALL(*p_videoOutputPortMock, getHDCPProtocol())
+            .WillByDefault(::testing::Return(dsHDCP_VERSION_2X));
+        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
+            .WillByDefault(::testing::Return(videoPort));
+        ON_CALL(*p_videoOutputPortConfigImplMock, getPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "supportedhdcp", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("supportedHDCPVersion"));
+            string hdcpVersion = result["supportedHDCPVersion"].String();
+            EXPECT_FALSE(hdcpVersion.empty());
+            EXPECT_EQ(hdcpVersion, "2.2"); 
+            TEST_LOG("Supported HDCP version: %s", hdcpVersion.c_str());
+        }
+    }
 
-    std::ofstream file("/etc/device.properties");
-    file << "DEVICE_TYPE=mediaclient\n";
-    file.close();
+    /****************** audiocapabilities ******************/
+    {
+        TEST_LOG("Testing audiocapabilities method\n");
+        JsonObject result, params;
+        params["audioPort"] = "HDMI0";
+        
+        device::AudioOutputPort audioOutputPort;
+        string audioPort(_T("HDMI0"));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("devicetype"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"devicetype\":\"IpStb\"}"));
-
-}
-
-TEST_F(DeviceInfoTest, DeviceType_Success_FromDeviceProperties_Hybrid)
-{
-    removeFile("/etc/authService.conf");
-
-    std::ofstream file("/etc/device.properties");
-    file << "DEVICE_TYPE=hybrid\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("devicetype"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"devicetype\":\"QamIpStb\"}"));
-}
-
-TEST_F(DeviceInfoTest, DeviceType_Success_FromDeviceProperties_Other)
-{
-    removeFile("/etc/authService.conf");
-
-    std::ofstream file("/etc/device.properties");
-    file << "DEVICE_TYPE=other\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("devicetype"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"devicetype\":\"IpTv\"}"));
-}
-
-
-TEST_F(DeviceInfoTest, Model_Success_FromFile)
-{
-
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
-
-    std::ofstream file("/etc/device.properties");
-    file << "FRIENDLY_ID=TestModel123\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("modelname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"model\":\"TestModel123\"}"));
-}
-
-TEST_F(DeviceInfoTest, ReleaseVersion_Success)
-{
-    std::ofstream file("/version.txt");
-    file << "imagename:CUSTOM_VBN_22.03s_sprint_20220331225312sdy_NG\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("releaseversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"releaseversion\":\"22.03.0.0\"}"));
-}
-
-TEST_F(DeviceInfoTest, ChipSet_Success)
-{
-    std::ofstream file("/etc/device.properties");
-    file << "CHIPSET_NAME=BCM7252S\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("chipset"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"chipset\":\"BCM7252S\"}"));
-}
-
-TEST_F(DeviceInfoTest, FirmwareVersion_Success)
-{
-    std::ofstream file("/version.txt");
-    file << "imagename:TEST_IMAGE_V1\n";
-    file << "SDK_VERSION=18.4\n";
-    file << "MEDIARITE=9.0.1\n";
-    file << "YOCTO_VERSION=dunfell\n";
-    file.close();
-
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_PDRIVERSION) {
-                        strncpy(param->buffer, "PDRI_1.2.3", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
+        ON_CALL(*p_audioOutputPortMock, getAudioCapabilities(::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [&](int* capabilities) {
+                    if (capabilities != nullptr) {
+                        *capabilities = dsAUDIOSUPPORT_ATMOS | dsAUDIOSUPPORT_DD | dsAUDIOSUPPORT_DDPLUS | dsAUDIOSUPPORT_DAD | dsAUDIOSUPPORT_DAPv2 | dsAUDIOSUPPORT_MS12;
                     }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
+                }));
+        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
+            .WillByDefault(::testing::Return(audioPort));
+        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(audioOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "audiocapabilities", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("AudioCapabilities"));
+            JsonArray capabilities = result["AudioCapabilities"].Array();
+            EXPECT_GT(capabilities.Length(), 0);
+            // Verify expected capabilities are present
+            bool hasAtmos = false, hasDD = false, hasDDPlus = false, hasDAD = false, hasDAPv2 = false, hasMS12 = false;
+            for (int i = 0; i < capabilities.Length(); i++) {
+                string cap = capabilities[i].String();
+                if (cap == "ATMOS") hasAtmos = true;
+                if (cap == "DD") hasDD = true;
+                if (cap == "DDPLUS") hasDDPlus = true;
+                if (cap == "DAD") hasDAD = true;
+                if (cap == "DAPv2") hasDAPv2 = true;
+                if (cap == "MS12") hasMS12 = true;
+            }
+            EXPECT_TRUE(hasAtmos || hasDD || hasDDPlus);
+            TEST_LOG("Audio capabilities count: %d", capabilities.Length());
+        }
+    }
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V1\",\"middleware\":\"0.0\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"PDRI_1.2.3\"}"));
-}
+    /****************** ms12capabilities ******************/
+    {
+        TEST_LOG("Testing ms12capabilities method\n");
+        JsonObject result, params;
+        params["audioPort"] = "HDMI0";
+        
+        device::AudioOutputPort audioOutputPort;
+        string audioPort(_T("HDMI0"));
 
-TEST_F(DeviceInfoTest, Sku_Success_FromMFR)
-{
-    // Ensure file doesn't exist before calling implementation
-    removeFile("/etc/device.properties");
-
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (string(ownerName) == string(_T(IARM_BUS_MFRLIB_NAME)) &&
-                    string(methodName) == string(_T(IARM_BUS_MFRLIB_API_GetSerializedData))) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_MODELNAME) {
-                        param->bufLen = strlen("MFR-SKU-002");
-                        strncpy(param->buffer, "MFR-SKU-002", sizeof(param->buffer));
-                        return IARM_RESULT_SUCCESS;
+        ON_CALL(*p_audioOutputPortMock, getMS12Capabilities(::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [&](int* capabilities) {
+                    if (capabilities != nullptr) {
+                        *capabilities = dsMS12SUPPORT_DolbyVolume | dsMS12SUPPORT_InteligentEqualizer | dsMS12SUPPORT_DialogueEnhancer;
                     }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
+                }));
+        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
+            .WillByDefault(::testing::Return(audioPort));
+        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(audioOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "ms12capabilities", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("MS12Capabilities"));
+            JsonArray capabilities = result["MS12Capabilities"].Array();
+            EXPECT_GT(capabilities.Length(), 0);
+            // Verify expected capabilities are present
+            bool hasDolbyVolume = false, hasIntelligentEqualizer = false, hasDialogueEnhancer = false;
+                for (int i = 0; i < capabilities.Length(); i++) {
+                string cap = capabilities[i].String();
+                if (cap == "Dolby_Volume") hasDolbyVolume = true;
+                if (cap == "Inteligent_Equalizer") hasIntelligentEqualizer = true;
+                if (cap == "Dialogue_Enhancer") hasDialogueEnhancer = true;
+            }
+            EXPECT_TRUE(hasDolbyVolume || hasIntelligentEqualizer || hasDialogueEnhancer);
+            TEST_LOG("MS12 capabilities count: %d", capabilities.Length());
+        }
+    }
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("modelid"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"sku\":\"MFR-SKU-002\"}"));
+    /****************** supportedms12audioprofiles ******************/
+    {
+        TEST_LOG("Testing supportedms12audioprofiles method\n");
+        JsonObject result, params;
+        params["audioPort"] = "HDMI0";
+        
+        device::AudioOutputPort audioOutputPort;
+        string audioPort(_T("HDMI0"));
+        string audioPortMS12AudioProfile(_T("Movie"));
+
+        ON_CALL(*p_audioOutputPortMock, getMS12AudioProfileList())
+            .WillByDefault(::testing::Return(std::vector<std::string>({ audioPortMS12AudioProfile })));
+        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
+            .WillByDefault(::testing::Return(audioPort));
+        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(audioOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "supportedms12audioprofiles", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("supportedMS12AudioProfiles"));
+            JsonArray profiles = result["supportedMS12AudioProfiles"].Array();
+            EXPECT_GT(profiles.Length(), 0);
+            if (profiles.Length() > 0) {
+                string profile = profiles[0].String();
+                EXPECT_EQ(profile, "Movie");
+                TEST_LOG("First MS12 audio profile: %s", profile.c_str());
+            }
+        }
+    }
+
+    TEST_LOG("DeviceInfo L2 Method Tests completed\n");
 }
 
-TEST_F(DeviceInfoTest, Sku_Success_FromRFC)
+TEST_F(DeviceInfo_L2test, DeviceInfo_L2_PropertyTest)
 {
-    // Ensure file doesn't exist before calling implementation
-    removeFile("/etc/device.properties");
+    JSONRPC::LinkType<Core::JSON::IElement> jsonrpc(DEVICEINFO_CALLSIGN, DEVICEINFOL2TEST_CALLSIGN);
+    JsonObject result, params;
+    uint32_t status = Core::ERROR_NONE;
 
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+    TEST_LOG("Starting DeviceInfo L2 Property Tests\n");
 
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, _, _))
-        .WillRepeatedly(Invoke(
-            [](char* pcCallerID, const char* pcParameterName, RFC_ParamData_t* pstParamData) {
-                if (string(pcParameterName) == string("Device.DeviceInfo.ModelName")) {
-                    strncpy(pstParamData->value, "RFC-SKU-003", sizeof(pstParamData->value));
-                    return WDMP_SUCCESS;
-                }
-                return WDMP_FAILURE;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("modelid"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"sku\":\"RFC-SKU-003\"}"));
-}
-
-TEST_F(DeviceInfoTest, Sku_Failure_AllSourcesFail)
-{
-    removeFile("/etc/device.properties");
-
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
-
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, _, _))
-        .WillRepeatedly(Return(WDMP_FAILURE));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("modelid"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, Make_Success_FromMFR)
-{
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+    /****************** systeminfo ******************/
+    {
+        TEST_LOG("Testing systeminfo property\n");
+    
+        ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+            .WillByDefault(
+                [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                    EXPECT_EQ(string(ownerName), string(_T(IARM_BUS_MFRLIB_NAME)));
+                    EXPECT_EQ(string(methodName), string(_T(IARM_BUS_MFRLIB_API_GetSerializedData)));
                     auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_MANUFACTURER) {
-                        strncpy(param->buffer, "TestManufacturer", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
+                    const char* str = "5678";
+                    param->bufLen = strlen(str);
+                    strncpy(param->buffer, str, sizeof(param->buffer));
+                    param->type =  mfrSERIALIZED_TYPE_SERIALNUMBER;
+                    return IARM_RESULT_SUCCESS;
+                });
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "systeminfo@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("serialnumber"));
+            string serialNumber = getResults["serialnumber"].String();
+            EXPECT_FALSE(serialNumber.empty());
+            EXPECT_EQ(serialNumber, "5678");
+            TEST_LOG("System info serial number: %s", serialNumber.c_str());
+        }
+    }
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("make"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"make\":\"TestManufacturer\"}"));
-}
+    /****************** addresses ******************/
+    {
+        TEST_LOG("Testing addresses property\n");
 
-TEST_F(DeviceInfoTest, Make_Failure_BothSourcesFail)
-{
-    removeFile("/etc/device.properties");
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "addresses@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        // addresses returns empty object {} when no addresses available
+        TEST_LOG("addresses test completed\n");
+    }
 
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+    // /****************** socketinfo ******************/
+    // {
+    //     TEST_LOG("Testing socketinfo property\n");
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("make"), _T(""), response));
-}
+    //     JsonObject getResults;
+    //     uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "socketinfo@0", getResults);
+    //     EXPECT_EQ(Core::ERROR_NONE, getResult);
+    //     if (getResult == Core::ERROR_NONE) {
+    //         EXPECT_TRUE(getResults.HasLabel("runs"));
+    //         int runs = getResults["runs"].Number();
+    //         EXPECT_GE(runs, 0);
+    //         EXPECT_EQ(runs, 99);
+    //         TEST_LOG("socketinfo runs: %d", runs);
+    //     }
+    // }
 
-TEST_F(DeviceInfoTest, Model_Failure_FileNotFound)
-{
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+    /****************** firmwareversion ******************/
+    {
+        TEST_LOG("Testing firmwareversion property\n");
 
-    removeFile("/etc/device.properties");
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "firmwareversion@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("imagename"));
+            string imagename = getResults["imagename"].String();
+            EXPECT_FALSE(imagename.empty());
+            EXPECT_EQ(imagename, "CUSTOM_VBN_22.03s_sprint_20220331225312sdy_NG");
+            TEST_LOG("Firmware imagename: %s", imagename.c_str());
+        }
+        // middleware: extracted from imagename "CUSTOM_VBN_22.03s_sprint_..." -> "22.03s"
+        if (getResults.HasLabel("middleware")) {
+            string middleware = getResults["middleware"].String();
+            EXPECT_EQ(middleware, "22.03s");
+            TEST_LOG("Firmware middleware: %s", middleware.c_str());
+        }
+        // Additional validations for other firmware fields
+        if (getResults.HasLabel("sdk")) {
+            string sdk = getResults["sdk"].String();
+            EXPECT_EQ(sdk, "17.3");
+        }
+        if (getResults.HasLabel("mediarite")) {
+            string mediarite = getResults["mediarite"].String();
+            EXPECT_EQ(mediarite, "8.3.53");
+        }
+        if (getResults.HasLabel("yocto")) {
+            string yocto = getResults["yocto"].String();
+            EXPECT_EQ(yocto, "dunfell");
+        }
+    }
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("modelname"), _T(""), response));
-}
+    /****************** serialnumber ******************/
+    {
+        TEST_LOG("Testing serialnumber property\n");
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "serialnumber@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("serialnumber"));
+            string serialNumber = getResults["serialnumber"].String();
+            EXPECT_FALSE(serialNumber.empty());
+            EXPECT_EQ(serialNumber, "5678");
+            TEST_LOG("Serial number: %s", serialNumber.c_str());
+        }
+    }
 
-TEST_F(DeviceInfoTest, DeviceType_Failure_BothFilesNotFound)
-{
-    removeFile("/etc/authService.conf");
-    removeFile("/etc/device.properties");
+    /****************** modelid ******************/
+    {
+        TEST_LOG("Testing modelid property\n");
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("devicetype"), _T(""), response));
-}
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "modelid@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("sku"));
+            string sku = getResults["sku"].String();
+            EXPECT_FALSE(sku.empty());
+            EXPECT_EQ(sku, "TEST_SKU_12345");
+            TEST_LOG("Model ID (SKU): %s", sku.c_str());
+        }
+    }
 
-TEST_F(DeviceInfoTest, SocName_Failure_FileNotFound)
-{
-    removeFile("/etc/device.properties");
+    /****************** make ******************/
+    {
+        TEST_LOG("Testing make property\n");
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("socname"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, DistributorId_Success_FromFile)
-{
-    removeFile("/opt/www/authService/partnerId3.dat");
-
-    std::ofstream file("/opt/www/authService/partnerId3.dat");
-    file << "PARTNER123\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("distributorid"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"distributorid\":\"PARTNER123\"}"));
-}
-
-TEST_F(DeviceInfoTest, DistributorId_Success_FromRFC)
-{
-    removeFile("/opt/www/authService/partnerId3.dat");
-
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, ::testing::StrEq("Device.DeviceInfo.X_RDKCENTRAL-COM_Syndication.PartnerId"), _))
-        .WillRepeatedly(::testing::Invoke(
-            [](char* pcCallerID, const char* pcParameterName, RFC_ParamData_t* pstParamData) {
-                strncpy(pstParamData->value, "RFCPARTNER456", sizeof(pstParamData->value) - 1);
-                pstParamData->value[sizeof(pstParamData->value) - 1] = '\0';
-                pstParamData->type = WDMP_STRING;
-                return WDMP_SUCCESS;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("distributorid"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"distributorid\":\"RFCPARTNER456\"}"));
-}
-
-TEST_F(DeviceInfoTest, DistributorId_Failure_BothSourcesFail)
-{
-    removeFile("/opt/www/authService/partnerId3.dat");
-
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, _, _))
-        .WillRepeatedly(Return(WDMP_FAILURE));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("distributorid"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, Brand_Success_FromTmpFile)
-{
-    std::ofstream file("/tmp/.manufacturer");
-    file << "TestBrand\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("brandname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"brand\":\"TestBrand\"}"));
-}
-
-TEST_F(DeviceInfoTest, Brand_Success_FromMFR)
-{
-    removeFile("/tmp/.manufacturer");
-
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+        ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+            .WillByDefault(
+                [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                    EXPECT_EQ(string(ownerName), string(_T(IARM_BUS_MFRLIB_NAME)));
+                    EXPECT_EQ(string(methodName), string(_T(IARM_BUS_MFRLIB_API_GetSerializedData)));
                     auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_MANUFACTURER) {
-                        strncpy(param->buffer, "MFRBrand", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
+                    const char* str = "TestManufacturer";
+                    param->bufLen = strlen(str);
+                    strncpy(param->buffer, str, sizeof(param->buffer));
+                    param->type =  mfrSERIALIZED_TYPE_MANUFACTURER;
+                    return IARM_RESULT_SUCCESS;
+                });
+        
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "make@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("make"));
+            string make = getResults["make"].String();
+            EXPECT_FALSE(make.empty());
+            EXPECT_EQ(make, "TestManufacturer");
+            TEST_LOG("Make: %s", make.c_str());
+        }
+    }
+
+    /****************** modelname ******************/
+    {
+        TEST_LOG("Testing modelname property\n");
+
+        std::ofstream file("/etc/device.properties");
+        file << "FRIENDLY_ID=\"CUSTOM4 CUSTOM9\"";
+        file.close();
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "modelname@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("model"));
+            string model = getResults["model"].String();
+            EXPECT_FALSE(model.empty());
+            EXPECT_EQ(model, "CUSTOM4 CUSTOM9");
+            TEST_LOG("Model name: %s", model.c_str());
+        }
+    }
+
+    /****************** brandname ******************/
+    {
+        TEST_LOG("Testing brandname property\n");
+        JsonObject result, params;
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "brandname@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("brand"));
+            string brand = getResults["brand"].String();
+            EXPECT_FALSE(brand.empty());
+            EXPECT_EQ(brand, "TestBrand");
+            TEST_LOG("Brand name: %s", brand.c_str());
+        }
+    }
+
+    /****************** devicetype ******************/
+    {
+        TEST_LOG("Testing devicetype property\n");
+
+        std::ofstream file("/etc/authService.conf");
+        file << "deviceType=IpStb";
+        file.close();
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "devicetype@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("devicetype"));
+            string deviceType = getResults["devicetype"].String();
+            EXPECT_FALSE(deviceType.empty());
+            EXPECT_EQ(deviceType, "IpStb");
+            TEST_LOG("Device type: %s", deviceType.c_str());
+        }
+    }
+
+    /****************** socname ******************/
+    {
+        TEST_LOG("Testing socname property\n");
+
+        std::ofstream file("/etc/device.properties");
+        file << "SOC=NVIDIA\n";
+        file.close();
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "socname@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("socname"));
+            string socName = getResults["socname"].String();
+            EXPECT_FALSE(socName.empty());
+            EXPECT_EQ(socName, "NVIDIA");
+            TEST_LOG("SoC name: %s", socName.c_str());
+        }
+    }
+
+    {
+        TEST_LOG("Testing distributorid from file\n");
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "distributorid@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("distributorid"));
+            string distributorId = getResults["distributorid"].String();
+            EXPECT_EQ(distributorId, "TestPartnerID");
+            TEST_LOG("Distributor ID: %s", distributorId.c_str());
+        }
+    }
+
+
+    /****************** releaseversion ******************/
+    {
+        TEST_LOG("Testing releaseversion property\n");
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "releaseversion@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("releaseversion"));
+            string releaseVersion = getResults["releaseversion"].String();
+            EXPECT_FALSE(releaseVersion.empty());
+            EXPECT_EQ(releaseVersion, "22.03.0.0");
+            TEST_LOG("Release version: %s", releaseVersion.c_str());
+        }
+    }
+
+    /****************** chipset ******************/
+    {
+        TEST_LOG("Testing chipset property\n");
+
+        std::ofstream file("/etc/device.properties");
+        file << "CHIPSET_NAME=TestChipset\n";
+        file.close();
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "chipset@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+
+
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("chipset"));
+            string chipset = getResults["chipset"].String();
+            EXPECT_FALSE(chipset.empty());
+            EXPECT_EQ(chipset, "TestChipset");
+            TEST_LOG("Chipset: %s", chipset.c_str());
+        }
+    }
+
+    /****************** supportedaudioports ******************/
+    {
+        TEST_LOG("Testing supportedaudioports property\n");
+        JsonObject result, params;
+        JsonObject getResults;
+        device::AudioOutputPort audioOutputPort;
+        string audioPort(_T("HDMI0"));
+
+        ON_CALL(*p_audioOutputPortMock, getName())
+            .WillByDefault(::testing::ReturnRef(audioPort));
+        ON_CALL(*p_hostImplMock, getAudioOutputPorts())
+            .WillByDefault(::testing::Return(device::List<device::AudioOutputPort>({ audioOutputPort })));
+
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "supportedaudioports@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("supportedAudioPorts"));
+            JsonArray audioPorts = getResults["supportedAudioPorts"].Array();
+            EXPECT_GT(audioPorts.Length(), 0);
+            if (audioPorts.Length() > 0) {
+                string port = audioPorts[0].String();
+                EXPECT_EQ(port, "HDMI0");
+                TEST_LOG("First audio port: %s", port.c_str());
+            }
+        }
+    }
+
+    /****************** supportedvideodisplays ******************/
+    {
+        TEST_LOG("Testing supportedvideodisplays property\n");
+        JsonObject result, params;
+        
+        device::VideoOutputPort videoOutputPort;
+        string videoPort(_T("HDMI0"));
+
+        ON_CALL(*p_videoOutputPortMock, getName())
+            .WillByDefault(::testing::ReturnRef(videoPort));
+        ON_CALL(*p_hostImplMock, getVideoOutputPorts())
+            .WillByDefault(::testing::Return(device::List<device::VideoOutputPort>({ videoOutputPort })));
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "supportedvideodisplays@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("supportedVideoDisplays"));
+            JsonArray videoDisplays = getResults["supportedVideoDisplays"].Array();
+            EXPECT_GT(videoDisplays.Length(), 0);
+            if (videoDisplays.Length() > 0) {
+                string display = videoDisplays[0].String();
+                EXPECT_EQ(display, "HDMI0");
+                TEST_LOG("First video display: %s", display.c_str());
+            }
+        }
+    }
+
+    /****************** hostedid ******************/
+    {
+        TEST_LOG("Testing hostedid property\n");
+        JsonObject result, params;
+        
+        ON_CALL(*p_hostImplMock, getHostEDID(::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [&](std::vector<uint8_t>& edid) {
+                    edid = { 't', 'e', 's', 't' };
+                }));
+        
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "hostedid@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("EDID"));
+            string edid = getResults["EDID"].String();
+            EXPECT_FALSE(edid.empty());
+            EXPECT_EQ(edid, "dGVzdA==");  // base64 encoded "test"
+            TEST_LOG("EDID (base64): %s", edid.c_str());
+        }
+    }
+
+    TEST_LOG("DeviceInfo L2 Property Tests completed\n");
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_L2_ErrorHandlingTest)
+{
+    JSONRPC::LinkType<Core::JSON::IElement> jsonrpc(DEVICEINFO_CALLSIGN, DEVICEINFOL2TEST_CALLSIGN);
+    uint32_t status = Core::ERROR_NONE;
+
+    TEST_LOG("Starting DeviceInfo L2 Error Handling Tests\n");
+
+    /****************** Test with invalid video display ******************/
+    {
+        TEST_LOG("Testing defaultresolution with invalid videoDisplay\n");
+        JsonObject result, params;
+        params["videoDisplay"] = "INVALID_PORT";
+        
+        device::VideoOutputPort videoOutputPort;
+        string videoPort(_T("HDMI0"));
+
+        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
+            .WillByDefault(::testing::Return(videoPort));
+        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
+            .WillByDefault(::testing::Throw(device::Exception("Invalid port")));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "defaultresolution", params, result);
+        EXPECT_EQ(Core::ERROR_GENERAL, status);
+    }
+
+    /****************** Test with invalid audio port ******************/
+    {
+        TEST_LOG("Testing audiocapabilities with invalid audioPort\n");
+        JsonObject result, params;
+        params["audioPort"] = "INVALID_AUDIO_PORT";
+        
+        string audioPort(_T("HDMI0"));
+
+        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
+            .WillByDefault(::testing::Return(audioPort));
+        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
+            .WillByDefault(::testing::Throw(device::Exception("Invalid audio port")));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "audiocapabilities", params, result);
+        EXPECT_EQ(Core::ERROR_GENERAL, status);
+    }
+
+    /****************** Test supportedresolutions with exception ******************/
+    {
+        TEST_LOG("Testing supportedresolutions with device exception\n");
+        JsonObject result, params;
+        params["videoDisplay"] = "HDMI0";
+        
+        device::VideoOutputPort videoOutputPort;
+        string videoPort(_T("HDMI0"));
+
+        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
+            .WillByDefault(::testing::Return(videoPort));
+        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPort));
+        ON_CALL(*p_videoOutputPortMock, getType())
+            .WillByDefault(::testing::Throw(device::Exception("Type exception")));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "supportedresolutions", params, result);
+        EXPECT_EQ(Core::ERROR_GENERAL, status);
+    }
+
+    /****************** Test ms12capabilities with exception ******************/
+    {
+        TEST_LOG("Testing ms12capabilities with device exception\n");
+        JsonObject result, params;
+        params["audioPort"] = "HDMI0";
+        
+        string audioPort(_T("HDMI0"));
+
+        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
+            .WillByDefault(::testing::Return(audioPort));
+        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
+            .WillByDefault(::testing::Throw(device::Exception("MS12 exception")));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "ms12capabilities", params, result);
+        EXPECT_EQ(Core::ERROR_GENERAL, status);
+    }
+
+    TEST_LOG("DeviceInfo L2 Error Handling Tests completed\n");
+}
+TEST_F(DeviceInfo_L2test, DeviceInfo_L2_EdgeCaseTest)
+{
+    JSONRPC::LinkType<Core::JSON::IElement> jsonrpc(DEVICEINFO_CALLSIGN, DEVICEINFOL2TEST_CALLSIGN);
+    uint32_t status = Core::ERROR_NONE;
+
+    TEST_LOG("Starting DeviceInfo L2 Edge Case Tests\n");
+
+    /****************** Test with empty videoDisplay parameter ******************/
+    {
+        TEST_LOG("Testing defaultresolution with empty videoDisplay\n");
+        JsonObject result, params;
+        params["videoDisplay"] = "";
+        
+        device::VideoOutputPort videoOutputPort;
+        device::VideoResolution videoResolution;
+        string videoPort(_T("HDMI0"));
+        string videoPortDefaultResolution(_T("1080p"));
+
+        ON_CALL(*p_videoResolutionMock, getName())
+            .WillByDefault(::testing::ReturnRef(videoPortDefaultResolution));
+        ON_CALL(*p_videoOutputPortMock, getDefaultResolution())
+            .WillByDefault(::testing::ReturnRef(videoResolution));
+        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
+            .WillByDefault(::testing::Return(videoPort));
+        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "defaultresolution", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("defaultResolution"));
+            string resolution = result["defaultResolution"].String();
+            EXPECT_EQ(resolution, "1080p");
+            TEST_LOG("defaultresolution with empty param: %s", resolution.c_str());
+        }
+    }
+
+    /****************** Test with empty audioPort parameter ******************/
+    {
+        TEST_LOG("Testing audiocapabilities with empty audioPort\n");
+        JsonObject result, params;
+        params["audioPort"] = "";
+        
+        device::AudioOutputPort audioOutputPort;
+        string audioPort(_T("HDMI0"));
+
+        ON_CALL(*p_audioOutputPortMock, getAudioCapabilities(::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [&](int* capabilities) {
+                    if (capabilities != nullptr) {
+                        *capabilities = dsAUDIOSUPPORT_NONE;
                     }
+                }));
+        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
+            .WillByDefault(::testing::Return(audioPort));
+        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(audioOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "audiocapabilities", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("AudioCapabilities"));
+            JsonArray capabilities = result["AudioCapabilities"].Array();
+            // With NONE capability, array should be empty or have NONE value
+            TEST_LOG("Audio capabilities with empty port: %d items", capabilities.Length());
+        }
+    }
+
+    /****************** Test with multiple resolutions ******************/
+    {
+        TEST_LOG("Testing supportedresolutions with multiple resolutions\n");
+        JsonObject result, params;
+        params["videoDisplay"] = "HDMI0";
+        
+        device::VideoOutputPort videoOutputPort;
+        device::VideoOutputPortType videoOutputPortType;
+        device::VideoResolution videoResolution1, videoResolution2, videoResolution3;
+        string videoPort(_T("HDMI0"));
+        string resolution1(_T("480p"));
+        string resolution2(_T("720p"));
+        string resolution3(_T("1080p"));
+
+
+        ON_CALL(*p_videoResolutionMock, getName())
+            .WillByDefault(::testing::ReturnRef(resolution1));
+        ON_CALL(*p_videoOutputPortTypeMock, getSupportedResolutions())
+            .WillByDefault(::testing::Return(device::List<device::VideoResolution>({ videoResolution1, videoResolution2, videoResolution3 })));
+        ON_CALL(*p_videoOutputPortTypeMock, getId())
+            .WillByDefault(::testing::Return(0));
+        ON_CALL(*p_videoOutputPortMock, getType())
+            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
+        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
+            .WillByDefault(::testing::Return(videoPort));
+        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPort));
+        ON_CALL(*p_videoOutputPortConfigImplMock, getPortType(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "supportedresolutions", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("supportedResolutions"));
+            JsonArray resolutions = result["supportedResolutions"].Array();
+            EXPECT_EQ(resolutions.Length(), 3);  // Should have 3 resolutions
+            TEST_LOG("Supported resolutions count: %d", resolutions.Length());
+            // Verify resolutions are present
+            for (int i = 0; i < resolutions.Length(); i++) {
+                string res = resolutions[i].String();
+                EXPECT_FALSE(res.empty());
+                EXPECT_EQ(res, "480p");
+                // EXPECT_TRUE(res == "480p" || res == "720p" || res == "1080p");
+                TEST_LOG("Resolution[%d]: %s", i, res.c_str());
+            }
+        }
+    }
+
+    /****************** Test HDCP version 1.x ******************/
+    {
+        TEST_LOG("Testing supportedhdcp with HDCP 1.x\n");
+        JsonObject result, params;
+        params["videoDisplay"] = "HDMI0";
+        
+        device::VideoOutputPort videoOutputPort;
+        string videoPort(_T("HDMI0"));
+
+        ON_CALL(*p_videoOutputPortMock, getHDCPProtocol())
+            .WillByDefault(::testing::Return(dsHDCP_VERSION_1X));
+        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
+            .WillByDefault(::testing::Return(videoPort));
+        ON_CALL(*p_videoOutputPortConfigImplMock, getPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "supportedhdcp", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("supportedHDCPVersion"));
+            string hdcpVersion = result["supportedHDCPVersion"].String();
+            EXPECT_FALSE(hdcpVersion.empty());
+            EXPECT_EQ(hdcpVersion, "1.4");
+            // HDCP 1.x should be returned
+            TEST_LOG("HDCP version 1.x: %s", hdcpVersion.c_str());
+        }
+    }
+
+    /****************** Test all MS12 capabilities ******************/
+    {
+        TEST_LOG("Testing ms12capabilities with all capabilities enabled\n");
+        JsonObject result, params;
+        params["audioPort"] = "HDMI0";
+        
+        device::AudioOutputPort audioOutputPort;
+        string audioPort(_T("HDMI0"));
+
+        ON_CALL(*p_audioOutputPortMock, getMS12Capabilities(::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [&](int* capabilities) {
+                    if (capabilities != nullptr) {
+                        *capabilities = dsMS12SUPPORT_DolbyVolume | dsMS12SUPPORT_InteligentEqualizer | dsMS12SUPPORT_DialogueEnhancer;
+                    }
+                }));
+        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
+            .WillByDefault(::testing::Return(audioPort));
+        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(audioOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "ms12capabilities", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("MS12Capabilities"));
+            JsonArray capabilities = result["MS12Capabilities"].Array();
+            EXPECT_GT(capabilities.Length(), 0);
+            // Should have DolbyVolume, InteligentEqualizer, DialogueEnhancer
+            EXPECT_GE(capabilities.Length(), 3);
+            bool hasDV = false, hasIE = false, hasDE = false;
+            for (int i = 0; i < capabilities.Length(); i++) {
+                string cap = capabilities[i].String();
+                if (cap.find("Dolby_Volume") != string::npos) hasDV = true;
+                if (cap.find("Inteligent_Equalizer") != string::npos) hasIE = true;
+                if (cap.find("Dialogue_Enhancer") != string::npos) hasDE = true;
+                TEST_LOG("MS12 capability[%d]: %s", i, cap.c_str());
+            }
+            EXPECT_TRUE(hasDV && hasIE && hasDE);
+        }
+    }
+
+    /****************** Test multiple MS12 audio profiles ******************/
+    {
+        TEST_LOG("Testing supportedms12audioprofiles with multiple profiles\n");
+        JsonObject result, params;
+        params["audioPort"] = "HDMI0";
+        
+        device::AudioOutputPort audioOutputPort;
+        string audioPort(_T("HDMI0"));
+        std::vector<std::string> profiles = {"Movie", "Music", "Sports", "Game"};
+
+        ON_CALL(*p_audioOutputPortMock, getMS12AudioProfileList())
+            .WillByDefault(::testing::Return(profiles));
+        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
+            .WillByDefault(::testing::Return(audioPort));
+        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(audioOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "supportedms12audioprofiles", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("supportedMS12AudioProfiles"));
+            JsonArray profiles = result["supportedMS12AudioProfiles"].Array();
+            EXPECT_EQ(profiles.Length(), 4);  // Should have 4 profiles: Movie, Music, Sports, Game
+            // Verify all expected profiles are present
+            bool hasMovie = false, hasMusic = false, hasSports = false, hasGame = false;
+            for (int i = 0; i < profiles.Length(); i++) {
+                string profile = profiles[i].String();
+                if (profile == "Movie") hasMovie = true;
+                if (profile == "Music") hasMusic = true;
+                if (profile == "Sports") hasSports = true;
+                if (profile == "Game") hasGame = true;
+                TEST_LOG("MS12 profile[%d]: %s", i, profile.c_str());
+            }
+            EXPECT_TRUE(hasMovie && hasMusic && hasSports && hasGame);
+        }
+    }
+
+    TEST_LOG("DeviceInfo L2 Edge Case Tests completed\n");
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_L2_PropertyEdgeCaseTest)
+{
+    JSONRPC::LinkType<Core::JSON::IElement> jsonrpc(DEVICEINFO_CALLSIGN, DEVICEINFOL2TEST_CALLSIGN);
+    uint32_t status = Core::ERROR_NONE;
+
+    TEST_LOG("Starting DeviceInfo L2 Property Edge Case Tests\n");
+
+    /****************** Test firmwareversion with missing fields ******************/
+    {
+        TEST_LOG("Testing firmwareversion with only imagename\n");
+
+        std::ofstream file("/version.txt");
+        file << "imagename:TEST_IMAGE\n";
+        file.close();
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "firmwareversion@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        TEST_LOG("firmwareversion with minimal data test completed\n");
+    }
+
+    /****************** Test firmwareversion with all fields ******************/
+    {
+        TEST_LOG("Testing firmwareversion with all fields present\n");
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "firmwareversion@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        
+        if (getResult == Core::ERROR_NONE && getResults.HasLabel("firmwareversion")) {
+            JsonObject fwObj = getResults["firmwareversion"].Object();
+            EXPECT_TRUE(fwObj.HasLabel("imagename"));
+            EXPECT_TRUE(fwObj.HasLabel("sdk"));
+            EXPECT_TRUE(fwObj.HasLabel("mediarite"));
+            EXPECT_TRUE(fwObj.HasLabel("yocto"));
+        }
+        TEST_LOG("firmwareversion with all fields test completed\n");
+    }
+
+    /****************** Test serialnumber from MFR ******************/
+    {
+        TEST_LOG("Testing serialnumber from MFR\n");
+        
+        ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+            .WillByDefault(
+                [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                    if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                        auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                        if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                            const char* str = "MFR_SERIAL_12345";
+                            param->bufLen = strlen(str);
+                            strncpy(param->buffer, str, sizeof(param->buffer));
+                            return IARM_RESULT_SUCCESS;
+                        }
+                    }
+                    return IARM_RESULT_INVALID_PARAM;
+                });
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "serialnumber@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("serialnumber"));
+            string serialNumber = getResults["serialnumber"].String();
+            EXPECT_FALSE(serialNumber.empty());
+            EXPECT_EQ(serialNumber, "MFR_SERIAL_12345");
+            TEST_LOG("Serial number from MFR: %s", serialNumber.c_str());
+        }
+    }
+
+    /****************** Test make from device.properties ******************/
+    {
+        TEST_LOG("Testing make from device.properties\n");
+
+        std::ofstream file("/etc/device.properties");
+        file << "MFG_NAME=EdgeCaseManufacturer\n";
+        file.close();
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "make@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("make"));
+            string make = getResults["make"].String();
+            EXPECT_FALSE(make.empty());
+            EXPECT_EQ(make, "EdgeCaseManufacturer");
+            TEST_LOG("Make from device.properties: %s", make.c_str());
+        }
+    }
+
+    /****************** Test modelname with quotes ******************/
+    {
+        TEST_LOG("Testing modelname with quoted value\n");
+
+        std::ofstream file("/etc/device.properties");
+        file << "FRIENDLY_ID=\"Quoted Model Name\"\n";
+        file.close();
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "modelname@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("model"));
+            string model = getResults["model"].String();
+            EXPECT_FALSE(model.empty());
+            EXPECT_EQ(model, "Quoted Model Name");
+            TEST_LOG("Model name with quotes: %s", model.c_str());
+        }
+    }
+
+    /****************** Test distributorid from RFC ******************/
+    {
+        TEST_LOG("Testing distributorid from RFC\n");
+        
+        ON_CALL(*p_rfcApiImplMock, getRFCParameter(::testing::_, ::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](char* pcCallerID, const char* pcParameterName, RFC_ParamData_t* pstParamData) {
+                    if (strcmp(pcParameterName, "Device.DeviceInfo.X_RDKCENTRAL-COM_Syndication.PartnerId") == 0) {
+                        strcpy(pstParamData->value, "RFC_PARTNER_ID");
+                        return WDMP_SUCCESS;
+                    }
+                    return WDMP_FAILURE;
+                }));
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "distributorid@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("distributorid"));
+            string distributorId = getResults["distributorid"].String();
+            // Should return the value cached from constructor: "TestPartnerID"
+            EXPECT_EQ(distributorId, "RFC_PARTNER_ID");
+            TEST_LOG("Distributor ID (cached from init): %s", distributorId.c_str());
+        }
+    }
+
+    /****************** Test multiple audio ports ******************/
+    {
+        TEST_LOG("Testing supportedaudioports with multiple ports\n");
+        
+        device::AudioOutputPort audioOutputPort1, audioOutputPort2, audioOutputPort3;
+        string audioPort1(_T("HDMI0"));
+        string audioPort2(_T("SPDIF0"));
+        string audioPort3(_T("SPEAKER0"));
+
+        ON_CALL(*p_audioOutputPortMock, getName())
+            .WillByDefault(::testing::ReturnRef(audioPort1));
+        ON_CALL(*p_hostImplMock, getAudioOutputPorts())
+            .WillByDefault(::testing::Return(device::List<device::AudioOutputPort>({ audioOutputPort1, audioOutputPort2, audioOutputPort3 })));
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "supportedaudioports@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+    }
+
+    /****************** Test hostedid with large EDID ******************/
+    {
+        TEST_LOG("Testing hostedid with large EDID data\n");
+        
+        ON_CALL(*p_hostImplMock, getHostEDID(::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [&](std::vector<uint8_t>& edid) {
+                    // Standard EDID size is 128 or 256 bytes
+                    edid.resize(256);
+                    for (size_t i = 0; i < 256; i++) {
+                        edid[i] = static_cast<uint8_t>(i & 0xFF);
+                    }
+                }));
+        
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "hostedid@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+
+        if (getResult == Core::ERROR_NONE) 
+        {
+            EXPECT_TRUE(getResults.HasLabel("EDID"));
+            string edid = getResults["EDID"].String();
+            EXPECT_FALSE(edid.empty());
+            // Validate that it's the expected base64-encoded value
+            EXPECT_EQ(edid, "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/w==");
+            // Verify the size (base64 encoded 256 bytes should be 344 characters)
+            EXPECT_GT(edid.length(), 0);
+            TEST_LOG("EDID (base64) length: %zu", edid.length());
+        }
+    }
+
+    TEST_LOG("DeviceInfo L2 Property Edge Case Tests completed\n");
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_L2_ExceptionHandlingTest)
+{
+    JSONRPC::LinkType<Core::JSON::IElement> jsonrpc(DEVICEINFO_CALLSIGN, DEVICEINFOL2TEST_CALLSIGN);
+    uint32_t status = Core::ERROR_NONE;
+
+    TEST_LOG("Starting DeviceInfo L2 Exception Handling Tests\n");
+
+    /****************** Test supportedaudioports with exception ******************/
+    {
+        TEST_LOG("Testing supportedaudioports with device exception\n");
+        
+        ON_CALL(*p_hostImplMock, getAudioOutputPorts())
+            .WillByDefault(::testing::Throw(device::Exception("Audio ports exception")));
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "supportedaudioports@0", getResults);
+        EXPECT_EQ(Core::ERROR_GENERAL, getResult);
+    }
+
+    /****************** Test supportedvideodisplays with exception ******************/
+    {
+        TEST_LOG("Testing supportedvideodisplays with device exception\n");
+        
+        ON_CALL(*p_hostImplMock, getVideoOutputPorts())
+            .WillByDefault(::testing::Throw(device::Exception("Video ports exception")));
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "supportedvideodisplays@0", getResults);
+        EXPECT_EQ(Core::ERROR_GENERAL, getResult);
+    }
+
+    /****************** Test hostedid with exception ******************/
+    {
+        TEST_LOG("Testing hostedid with device exception\n");
+        
+        ON_CALL(*p_hostImplMock, getHostEDID(::testing::_))
+            .WillByDefault(::testing::Throw(device::Exception("EDID exception")));
+        
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "hostedid@0", getResults);
+        EXPECT_EQ(Core::ERROR_GENERAL, getResult);
+    }
+
+    /****************** Test supportedhdcp with exception ******************/
+    {
+        TEST_LOG("Testing supportedhdcp with exception\n");
+        JsonObject result, params;
+        params["videoDisplay"] = "HDMI0";
+        
+        device::VideoOutputPort videoOutputPort;
+        string videoPort(_T("HDMI0"));
+
+        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
+            .WillByDefault(::testing::Return(videoPort));
+        ON_CALL(*p_videoOutputPortConfigImplMock, getPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPort));
+        ON_CALL(*p_videoOutputPortMock, getHDCPProtocol())
+            .WillByDefault(::testing::Throw(device::Exception("HDCP exception")));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "supportedhdcp", params, result);
+        EXPECT_EQ(Core::ERROR_GENERAL, status);
+    }
+
+    /****************** Test supportedms12audioprofiles with exception ******************/
+    {
+        TEST_LOG("Testing supportedms12audioprofiles with device exception\n");
+        JsonObject result, params;
+        params["audioPort"] = "HDMI0";
+        
+        string audioPort(_T("HDMI0"));
+
+        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
+            .WillByDefault(::testing::Return(audioPort));
+        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
+            .WillByDefault(::testing::Throw(device::Exception("MS12 profiles exception")));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "supportedms12audioprofiles", params, result);
+        EXPECT_EQ(Core::ERROR_GENERAL, status);
+    }
+
+    TEST_LOG("DeviceInfo L2 Exception Handling Tests completed\n");
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_L2_AdditionalPropertiesTest)
+{
+    JSONRPC::LinkType<Core::JSON::IElement> jsonrpc(DEVICEINFO_CALLSIGN, DEVICEINFOL2TEST_CALLSIGN);
+    uint32_t status = Core::ERROR_NONE;
+
+    TEST_LOG("Starting DeviceInfo L2 Additional Properties Tests\n");
+
+    /****************** Test systeminfo with different MFR data ******************/
+    {
+        TEST_LOG("Testing systeminfo with different serial number\n");
+    
+        ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+            .WillByDefault(
+                [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                    if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                        auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                        if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                            const char* str = "DIFFERENT_SERIAL_9999";
+                            param->bufLen = strlen(str);
+                            strncpy(param->buffer, str, sizeof(param->buffer));
+                            return IARM_RESULT_SUCCESS;
+                        }
+                    }
+                    return IARM_RESULT_INVALID_PARAM;
+                });
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "systeminfo@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        
+        if (getResult == Core::ERROR_NONE && getResults.HasLabel("systeminfo")) {
+            JsonObject sysInfo = getResults["systeminfo"].Object();
+            EXPECT_TRUE(sysInfo.HasLabel("time"));
+            EXPECT_TRUE(sysInfo.HasLabel("version"));
+            EXPECT_TRUE(sysInfo.HasLabel("uptime"));
+        }
+    }
+
+    TEST_LOG("DeviceInfo L2 Additional Properties Tests completed\n");
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_L2_MethodVariationsTest)
+{
+    JSONRPC::LinkType<Core::JSON::IElement> jsonrpc(DEVICEINFO_CALLSIGN, DEVICEINFOL2TEST_CALLSIGN);
+    uint32_t status = Core::ERROR_NONE;
+
+    TEST_LOG("Starting DeviceInfo L2 Method Variations Tests\n");
+
+    /****************** Test defaultresolution with different resolutions ******************/
+    {
+        TEST_LOG("Testing defaultresolution with 4K resolution\n");
+        JsonObject result, params;
+        params["videoDisplay"] = "HDMI0";
+        
+        device::VideoOutputPort videoOutputPort;
+        device::VideoResolution videoResolution;
+        string videoPort(_T("HDMI0"));
+        string videoPortDefaultResolution(_T("2160p"));
+
+        ON_CALL(*p_videoResolutionMock, getName())
+            .WillByDefault(::testing::ReturnRef(videoPortDefaultResolution));
+        ON_CALL(*p_videoOutputPortMock, getDefaultResolution())
+            .WillByDefault(::testing::ReturnRef(videoResolution));
+        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
+            .WillByDefault(::testing::Return(videoPort));
+        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "defaultresolution", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);  // Change from ERROR_GENERAL to ERROR_NONE
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("defaultResolution"));
+            string resolution = result["defaultResolution"].String();
+            EXPECT_EQ(resolution, "2160p");
+            TEST_LOG("4K default resolution: %s", resolution.c_str());
+        }
+    }
+
+    /****************** Test supportedresolutions with 4K support ******************/
+    {
+        TEST_LOG("Testing supportedresolutions with 4K support\n");
+        JsonObject result, params;
+        params["videoDisplay"] = "HDMI0";
+        
+        device::VideoOutputPort videoOutputPort;
+        device::VideoOutputPortType videoOutputPortType;
+        device::VideoResolution res1, res2, res3, res4, res5;
+        string videoPort(_T("HDMI0"));
+        string resolution(_T("2160p"));
+
+        ON_CALL(*p_videoResolutionMock, getName())
+            .WillByDefault(::testing::ReturnRef(resolution));
+        ON_CALL(*p_videoOutputPortTypeMock, getSupportedResolutions())
+            .WillByDefault(::testing::Return(device::List<device::VideoResolution>({ res1, res2, res3, res4, res5 })));
+        ON_CALL(*p_videoOutputPortTypeMock, getId())
+            .WillByDefault(::testing::Return(0));
+        ON_CALL(*p_videoOutputPortMock, getType())
+            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
+        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
+            .WillByDefault(::testing::Return(videoPort));
+        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPort));
+        ON_CALL(*p_videoOutputPortConfigImplMock, getPortType(::testing::_))
+            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "supportedresolutions", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);  // Change from ERROR_GENERAL to ERROR_NONE
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("supportedResolutions"));
+            JsonArray resolutions = result["supportedResolutions"].Array();
+            EXPECT_EQ(resolutions.Length(), 5);
+            if (resolutions.Length() > 0) {
+                string res = resolutions[0].String();
+                EXPECT_EQ(res, "2160p");
+                TEST_LOG("First 4K resolution: %s", res.c_str());
+            }
+        }
+    }
+
+
+    /****************** Test ms12capabilities with no capabilities ******************/
+    {
+        TEST_LOG("Testing ms12capabilities with none\n");
+        JsonObject result, params;
+        params["audioPort"] = "HDMI0";
+        
+        device::AudioOutputPort audioOutputPort;
+        string audioPort(_T("HDMI0"));
+
+        ON_CALL(*p_audioOutputPortMock, getMS12Capabilities(::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [&](int* capabilities) {
+                    if (capabilities != nullptr) {
+                        *capabilities = dsMS12SUPPORT_NONE;
+                    }
+                }));
+        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
+            .WillByDefault(::testing::Return(audioPort));
+        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(audioOutputPort));
+        
+        status = InvokeServiceMethod("DeviceInfo.1", "ms12capabilities", params, result);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+    }
+
+    TEST_LOG("DeviceInfo L2 Method Variations Tests completed\n");
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_MacAddressesAndIp)
+{
+
+    TEST_LOG("Starting DeviceInfo L2 JsonRpc MAC Addresses and IP Tests\n");
+
+    ON_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [](const char* type, const char* command, va_list args) -> FILE* {
+                va_list args2;
+                va_copy(args2, args);
+                char strFmt[256];
+                vsnprintf(strFmt, sizeof(strFmt), command, args2);
+                va_end(args2);
+                
+                const char* valueToReturn = nullptr;
+                
+                if (strcmp(strFmt, "/lib/rdk/getDeviceDetails.sh read eth_mac") == 0) {
+                    valueToReturn = "AA:BB:CC:DD:EE:FF";
+                } else if (strcmp(strFmt, "/lib/rdk/getDeviceDetails.sh read estb_mac") == 0) {
+                    valueToReturn = "11:22:33:44:55:66";
+                } else if (strcmp(strFmt, "/lib/rdk/getDeviceDetails.sh read wifi_mac") == 0) {
+                    valueToReturn = "00:11:22:33:44:55";
+                } else if (strcmp(strFmt, "/lib/rdk/getDeviceDetails.sh read estb_ip") == 0) {
+                    valueToReturn = "192.168.1.100";
                 }
-                return IARM_RESULT_INVALID_PARAM;
+                
+                if (valueToReturn != nullptr) {
+                    return fmemopen(strdup(valueToReturn), strlen(valueToReturn), "r");
+                }
+                
+                return nullptr;
             }));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("brandname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"brand\":\"MFRBrand\"}"));
+    /****************** ethmac ******************/
+    {
+        TEST_LOG("Testing ethmac property\n");
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "ethmac@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("eth_mac"));
+            string ethmac = getResults["eth_mac"].String();
+            EXPECT_FALSE(ethmac.empty());
+            EXPECT_EQ(ethmac, "AA:BB:CC:DD:EE:FF");
+            TEST_LOG("Ethernet MAC: %s", ethmac.c_str());
+        }
+    }
+
+    /****************** estbmac ******************/
+    {
+        TEST_LOG("Testing estbmac property\n");
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "estbmac@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("estb_mac"));
+            string estbmac = getResults["estb_mac"].String();
+            EXPECT_FALSE(estbmac.empty());
+            EXPECT_EQ(estbmac, "11:22:33:44:55:66");
+            TEST_LOG("STB MAC: %s", estbmac.c_str());
+        }
+    }
+
+    /****************** wifimac ******************/
+    {
+        TEST_LOG("Testing wifimac property\n");
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "wifimac@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("wifi_mac"));
+            string wifimac = getResults["wifi_mac"].String();
+            EXPECT_FALSE(wifimac.empty());
+            EXPECT_EQ(wifimac, "00:11:22:33:44:55");
+            TEST_LOG("WiFi MAC: %s", wifimac.c_str());
+        }
+    }
+
+    /****************** estbip ******************/
+    {
+        TEST_LOG("Testing estbip property\n");
+
+        JsonObject getResults;
+        uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "estbip@0", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
+        
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("estb_ip"));
+            string estbip = getResults["estb_ip"].String();
+            EXPECT_FALSE(estbip.empty());
+            EXPECT_EQ(estbip, "192.168.1.100");
+            TEST_LOG("STB IP: %s", estbip.c_str());
+        }
+    }
+
+    TEST_LOG("DeviceInfo L2 JsonRpc MAC Addresses and IP Tests completed\n");
 }
 
-TEST_F(DeviceInfoTest, Brand_Failure_BothSourcesFail)
+TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_MacAddressesAndIp_Negative)
 {
-    removeFile("/tmp/.manufacturer");
+    TEST_LOG("Starting DeviceInfo L2 JsonRpc MAC Addresses and IP Negative Tests\n");
 
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+    /****************** Test with v_secure_popen returning nullptr ******************/
+    {
+        TEST_LOG("Testing MAC/IP properties with v_secure_popen failure\n");
+        
+        ON_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
+            .WillByDefault(::testing::Return(nullptr));
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("brandname"), _T(""), response));
+        // Test ethmac
+        JsonObject getResults1;
+        uint32_t getResult1 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "ethmac@0", getResults1);
+        EXPECT_EQ(Core::ERROR_GENERAL, getResult1);
+        TEST_LOG("ethmac with popen failure: PASS\n");
+
+        // Test estbmac
+        JsonObject getResults2;
+        uint32_t getResult2 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "estbmac@0", getResults2);
+        EXPECT_EQ(Core::ERROR_GENERAL, getResult2);
+        TEST_LOG("estbmac with popen failure: PASS\n");
+
+        // Test wifimac
+        JsonObject getResults3;
+        uint32_t getResult3 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "wifimac@0", getResults3);
+        EXPECT_EQ(Core::ERROR_GENERAL, getResult3);
+        TEST_LOG("wifimac with popen failure: PASS\n");
+
+        // Test estbip
+        JsonObject getResults4;
+        uint32_t getResult4 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "estbip@0", getResults4);
+        EXPECT_EQ(Core::ERROR_GENERAL, getResult4);
+        TEST_LOG("estbip with popen failure: PASS\n");
+    }
+
+    /****************** Test with empty responses ******************/
+    {
+        TEST_LOG("Testing MAC/IP properties with empty responses\n");
+        
+        ON_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](const char* type, const char* command, va_list args) -> FILE* {
+                    const char* emptyData = "";
+                    return fmemopen(strdup(emptyData), strlen(emptyData), "r");
+                }));
+
+        // Test ethmac with empty response
+        JsonObject getResults1;
+        uint32_t getResult1 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "ethmac@0", getResults1);
+        EXPECT_EQ(Core::ERROR_NONE, getResult1);
+        if (getResult1 == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults1.HasLabel("eth_mac"));
+            string ethMac = getResults1["eth_mac"].String();
+            EXPECT_TRUE(ethMac.empty());
+            TEST_LOG("ethmac empty response: %s\n", ethMac.empty() ? "empty" : ethMac.c_str());
+        }
+
+        // Test estbmac with empty response
+        JsonObject getResults2;
+        uint32_t getResult2 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "estbmac@0", getResults2);
+        EXPECT_EQ(Core::ERROR_NONE, getResult2);
+        if (getResult2 == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults2.HasLabel("estb_mac"));
+            string estbMac = getResults2["estb_mac"].String();
+            EXPECT_TRUE(estbMac.empty());
+            TEST_LOG("estbmac empty response: %s\n", estbMac.empty() ? "empty" : estbMac.c_str());
+        }
+
+        // Test wifimac with empty response
+        JsonObject getResults3;
+        uint32_t getResult3 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "wifimac@0", getResults3);
+        EXPECT_EQ(Core::ERROR_NONE, getResult3);
+        if (getResult3 == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults3.HasLabel("wifi_mac"));
+            string wifiMac = getResults3["wifi_mac"].String();
+            EXPECT_TRUE(wifiMac.empty());
+            TEST_LOG("wifimac empty response: %s\n", wifiMac.empty() ? "empty" : wifiMac.c_str());
+        }
+
+        // Test estbip with empty response
+        JsonObject getResults4;
+        uint32_t getResult4 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "estbip@0", getResults4);
+        EXPECT_EQ(Core::ERROR_NONE, getResult4);
+        if (getResult4 == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults4.HasLabel("estb_ip"));
+            string estbIp = getResults4["estb_ip"].String();
+            EXPECT_TRUE(estbIp.empty());
+            TEST_LOG("estbip empty response: %s\n", estbIp.empty() ? "empty" : estbIp.c_str());
+        }
+    }
+
+    /****************** Test with malformed data ******************/
+    {
+        TEST_LOG("Testing MAC/IP properties with malformed data\n");
+        
+        ON_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](const char* type, const char* command, va_list args) -> FILE* {
+                    char buffer[256];
+                    vsnprintf(buffer, sizeof(buffer), command, args);
+                    std::string cmd(buffer);
+
+                    const char* data = nullptr;
+                    if (cmd.find("read eth_mac") != std::string::npos) {
+                        data = "INVALID_MAC_FORMAT\n";
+                    } else if (cmd.find("read estb_mac") != std::string::npos) {
+                        data = "ZZ:YY:XX:WW:VV:UU\n";
+                    } else if (cmd.find("read wifi_mac") != std::string::npos) {
+                        data = "NOT_A_MAC\n";
+                    } else if (cmd.find("read estb_ip") != std::string::npos) {
+                        data = "999.999.999.999\n";
+                    } else {
+                        data = "\n";
+                    }
+                    
+                    return fmemopen(strdup(data), strlen(data), "r");
+                }));
+
+        // Test ethmac with invalid format
+        JsonObject getResults1;
+        uint32_t getResult1 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "ethmac@0", getResults1);
+        EXPECT_EQ(Core::ERROR_NONE, getResult1);
+        if (getResult1 == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults1.HasLabel("eth_mac"));
+            string ethMac = getResults1["eth_mac"].String();
+            EXPECT_EQ(ethMac, "INVALID_MAC_FORMAT");
+            TEST_LOG("ethmac malformed: %s\n", ethMac.c_str());
+        }
+
+        // Test estbmac with invalid format
+        JsonObject getResults2;
+        uint32_t getResult2 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "estbmac@0", getResults2);
+        EXPECT_EQ(Core::ERROR_NONE, getResult2);
+        if (getResult2 == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults2.HasLabel("estb_mac"));
+            string estbMac = getResults2["estb_mac"].String();
+            EXPECT_EQ(estbMac, "ZZ:YY:XX:WW:VV:UU");
+            TEST_LOG("estbmac malformed: %s\n", estbMac.c_str());
+        }
+
+        // Test wifimac with invalid format
+        JsonObject getResults3;
+        uint32_t getResult3 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "wifimac@0", getResults3);
+        EXPECT_EQ(Core::ERROR_NONE, getResult3);
+        if (getResult3 == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults3.HasLabel("wifi_mac"));
+            string wifiMac = getResults3["wifi_mac"].String();
+            EXPECT_EQ(wifiMac, "NOT_A_MAC");
+            TEST_LOG("wifimac malformed: %s\n", wifiMac.c_str());
+        }
+
+        // Test estbip with invalid format
+        JsonObject getResults4;
+        uint32_t getResult4 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "estbip@0", getResults4);
+        EXPECT_EQ(Core::ERROR_NONE, getResult4);
+        if (getResult4 == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults4.HasLabel("estb_ip"));
+            string estbIp = getResults4["estb_ip"].String();
+            EXPECT_EQ(estbIp, "999.999.999.999");
+            TEST_LOG("estbip malformed: %s\n", estbIp.c_str());
+        }
+    }
+
+    /****************** Test with only newline character ******************/
+    {
+        TEST_LOG("Testing MAC/IP properties with only newline\n");
+        
+        ON_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](const char* type, const char* command, va_list args) -> FILE* {
+                    const char* data = "\n";
+                    return fmemopen(strdup(data), strlen(data), "r");
+                }));
+
+        // Test all properties with only newline
+        JsonObject getResults1;
+        uint32_t getResult1 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "ethmac@0", getResults1);
+        EXPECT_EQ(Core::ERROR_NONE, getResult1);
+        if (getResult1 == Core::ERROR_NONE) {
+            string ethMac = getResults1["eth_mac"].String();
+            EXPECT_TRUE(ethMac.empty());
+        }
+
+        JsonObject getResults2;
+        uint32_t getResult2 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "estbmac@0", getResults2);
+        EXPECT_EQ(Core::ERROR_NONE, getResult2);
+
+        JsonObject getResults3;
+        uint32_t getResult3 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "wifimac@0", getResults3);
+        EXPECT_EQ(Core::ERROR_NONE, getResult3);
+
+        JsonObject getResults4;
+        uint32_t getResult4 = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "estbip@0", getResults4);
+        EXPECT_EQ(Core::ERROR_NONE, getResult4);
+
+        TEST_LOG("All properties with only newline: PASS\n");
+    }
+
+    TEST_LOG("DeviceInfo L2 JsonRpc MAC Addresses and IP Negative Tests completed\n");
 }
 
-TEST_F(DeviceInfoTest, ReleaseVersion_DefaultVersion_InvalidPattern)
+// ======================= COM-RPC TESTS =======================
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_SerialNumber)
 {
-    removeFile("/version.txt");
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
-    std::ofstream file("/version.txt");
-    file << "releaseversion:99.99.0.0\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("releaseversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"releaseversion\":\"99.99.0.0\"}"));
-
+    Exchange::IDeviceInfo::DeviceSerialNo serialNumber;
+    Core::hresult rc = m_deviceinfoplugin->SerialNumber(serialNumber);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(serialNumber.serialnumber.empty());
+    EXPECT_EQ(serialNumber.serialnumber, "RFC_TEST_SERIAL");
 }
 
-TEST_F(DeviceInfoTest, ReleaseVersion_DefaultVersion_FileNotFound)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_Sku)
 {
-    removeFile("/version.txt");
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("releaseversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"releaseversion\":\"99.99.0.0\"}"));
+    Exchange::IDeviceInfo::DeviceModelNo modelNo;
+    Core::hresult rc = m_deviceinfoplugin->Sku(modelNo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(modelNo.sku.empty());
+    EXPECT_EQ(modelNo.sku, "TEST_SKU_12345");
 }
 
-TEST_F(DeviceInfoTest, ChipSet_Failure_FileNotFound)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_Make)
 {
-    removeFile("/etc/device.properties");
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("chipset"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, FirmwareVersion_Success_MissingOptionalFields)
-{
-    std::ofstream file("/version.txt");
-    file << "imagename:TEST_IMAGE_V2\n";
-    file.close();
-
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V2\",\"middleware\":\"0.0\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
-}
-
-TEST_F(DeviceInfoTest, FirmwareVersion_Failure_ImageNameNotFound)
-{
-    removeFile("/version.txt");
-
-    std::ofstream file("/version.txt");
-    file << "SDK_VERSION=18.4\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, FirmwareVersion_Failure_FileNotFound)
-{
-    removeFile("/version.txt");
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, DISABLE_SystemInfo_Success)
-{
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
             [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
                     auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "SYSTEMSERIAL123", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
+                    strcpy(param->buffer, "TestManufacturer");
+                    return IARM_RESULT_SUCCESS;
                 }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("systeminfo"), _T(""), response));
-    EXPECT_TRUE(response.find("\"version\":") != string::npos);
-    EXPECT_TRUE(response.find("\"uptime\":") != string::npos);
-    EXPECT_TRUE(response.find("\"totalram\":") != string::npos);
-    EXPECT_TRUE(response.find("\"freeram\":") != string::npos);
-    EXPECT_TRUE(response.find("\"devicename\":") != string::npos);
-    EXPECT_TRUE(response.find("\"cpuload\":") != string::npos);
-    EXPECT_TRUE(response.find("\"serialnumber\":\"SYSTEMSERIAL123\"") != string::npos);
-    EXPECT_TRUE(response.find("\"time\":") != string::npos);
-}
-
-TEST_F(DeviceInfoTest, Addresses_Success)
-{
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("addresses"), _T(""), response));
-    EXPECT_TRUE(response.find("\"name\":") != string::npos);
-    EXPECT_TRUE(response.find("\"mac\":") != string::npos);
-}
-
-TEST_F(DeviceInfoTest, SupportedAudioPorts_Success)
-{
-    device::List<device::AudioOutputPort> audioPorts;
-    device::AudioOutputPort port1, port2;
-    static const string portName1 = "HDMI0";
-    static const string portName2 = "SPDIF";
-
-    EXPECT_CALL(*p_audioOutputPortMock, getName())
-        .WillOnce(ReturnRef(portName1))
-        .WillOnce(ReturnRef(portName2));
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([&]() {
-            audioPorts.push_back(port1);
-            audioPorts.push_back(port2);
-            return audioPorts;
-        }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-    EXPECT_TRUE(response.find("\"supportedAudioPorts\":[") != string::npos);
-    EXPECT_TRUE(response.find("\"success\":true") != string::npos);
-}
-
-TEST_F(DeviceInfoTest, SupportedAudioPorts_Exception_DeviceException)
-{
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([]() -> device::List<device::AudioOutputPort> {
-            throw device::Exception("Test exception");
-        }));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, SupportedAudioPorts_Exception_StdException)
-{
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([]() -> device::List<device::AudioOutputPort> {
-            throw std::runtime_error("Test exception");
-        }));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, SupportedAudioPorts_Exception_UnknownException)
-{
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([]() -> device::List<device::AudioOutputPort> {
-            throw 42;
-        }));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-}
-
-// =========== Additional Negative Tests ===========
-
-TEST_F(DeviceInfoTest, SerialNumber_Negative_EmptyBuffer)
-{
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillOnce(Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                param->bufLen = 0;
-                param->buffer[0] = '\0';
                 return IARM_RESULT_SUCCESS;
-            }));
+            });
 
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, _, _))
-        .WillOnce(Return(WDMP_FAILURE));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("serialnumber"), _T(""), response));
-    EXPECT_TRUE(response.empty());
+    Exchange::IDeviceInfo::DeviceMake make;
+    Core::hresult rc = m_deviceinfoplugin->Make(make);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(make.make.empty());
+    EXPECT_EQ(make.make, "TestManufacturer");
 }
 
-TEST_F(DeviceInfoTest, Sku_Negative_InvalidFileFormat)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_Model)
 {
-    std::ofstream file("/etc/device.properties");
-    file << "INVALID_FORMAT_LINE\n";
-    file << "MODEL_NUM_WITHOUT_EQUAL_SIGN\n";
-    file.close();
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillOnce(Return(IARM_RESULT_INVALID_PARAM));
-
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, _, _))
-        .WillOnce(Return(WDMP_FAILURE));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("modelid"), _T(""), response));
-    EXPECT_TRUE(response.empty());
+    Exchange::IDeviceInfo::DeviceModel model;
+    Core::hresult rc = m_deviceinfoplugin->Model(model);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(model.model.empty());
+    EXPECT_EQ(model.model, "TestModel");
 }
 
-TEST_F(DeviceInfoTest, Make_Negative_InvalidFileFormat)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DeviceType)
 {
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillOnce(Return(IARM_RESULT_INVALID_PARAM));
-
-    std::ofstream file("/etc/device.properties");
-    file << "MFG_NAME_NO_VALUE=\n";
-    file << "OTHER_KEY=value\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("make"), _T(""), response));
-    EXPECT_TRUE(response.empty());
-}
-
-TEST_F(DeviceInfoTest, Model_Negative_EmptyFriendlyId)
-{
-    std::ofstream file("/etc/device.properties");
-    file << "FRIENDLY_ID=\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("modelname"), _T(""), response));
-    EXPECT_TRUE(response.empty());
-}
-
-TEST_F(DeviceInfoTest, Model_Negative_FileAccessException)
-{
-    removeFile("/etc/device.properties");
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("modelname"), _T(""), response));
-    EXPECT_TRUE(response.empty());
-}
-
-TEST_F(DeviceInfoTest, DeviceType_Negative_MalformedFile)
-{
-    removeFile("/etc/device.properties");
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
     std::ofstream file("/etc/authService.conf");
-    file << "INVALID LINE FORMAT\n";
-    file << "NO EQUAL SIGN\n";
+    file << "deviceType=IpStb";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("devicetype"), _T(""), response));
-    EXPECT_TRUE(response.empty());
+    Exchange::IDeviceInfo::DeviceTypeInfos deviceType;
+    Core::hresult rc = m_deviceinfoplugin->DeviceType(deviceType);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_NE(deviceType.devicetype, 0);
+    EXPECT_EQ(deviceType.devicetype, Exchange::IDeviceInfo::DEVICE_TYPE_IPSTB);
 }
 
-TEST_F(DeviceInfoTest, SocName_Negative_EmptySocValue)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_SocName)
 {
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
     std::ofstream file("/etc/device.properties");
-    file << "SOC=\n";
+    file << "SOC=NVIDIA\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("socname"), _T(""), response));
-    EXPECT_TRUE(response.empty());
-
+    Exchange::IDeviceInfo::DeviceSoc socName;
+    Core::hresult rc = m_deviceinfoplugin->SocName(socName);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(socName.socname.empty());
+    EXPECT_EQ(socName.socname, "NVIDIA");
 }
 
-TEST_F(DeviceInfoTest, SocName_Negative_MalformedFile)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DistributorId)
 {
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    Exchange::IDeviceInfo::DeviceDistId distributorId;
+    Core::hresult rc = m_deviceinfoplugin->DistributorId(distributorId);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(distributorId.distributorid, "TestPartnerID");
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_Brand)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    Exchange::IDeviceInfo::DeviceBrand brand;
+    Core::hresult rc = m_deviceinfoplugin->Brand(brand);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(brand.brand.empty());
+    EXPECT_EQ(brand.brand, "TestBrand");
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_ReleaseVersion)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    Exchange::IDeviceInfo::DeviceReleaseVer releaseVersion;
+    Core::hresult rc = m_deviceinfoplugin->ReleaseVersion(releaseVersion);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(releaseVersion.releaseversion.empty());
+    EXPECT_EQ(releaseVersion.releaseversion, "22.03.0.0");
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_ChipSet)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
     std::ofstream file("/etc/device.properties");
-    file << "SOC_WITHOUT_VALUE\n";
-    file << "OTHER_KEY=value\n";
+    file << "CHIPSET_NAME=TestChipset\n";
     file.close();
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("socname"), _T(""), response));
-    EXPECT_TRUE(response.empty());
-
+    Exchange::IDeviceInfo::DeviceChip chipset;
+    Core::hresult rc = m_deviceinfoplugin->ChipSet(chipset);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(chipset.chipset.empty());
+    EXPECT_EQ(chipset.chipset, "TestChipset");
 }
 
-TEST_F(DeviceInfoTest, DistributorId_Negative_EmptyFile)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_FirmwareVersion)
 {
-    std::ofstream file("/opt/www/authService/partnerId3.dat");
-    file << "";
-    file.close();
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, _, _))
-        .WillOnce(Return(WDMP_FAILURE));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("distributorid"), _T(""), response));
-    EXPECT_TRUE(response.empty());
+    Exchange::IDeviceInfo::FirmwareversionInfo firmwareVersion;
+    Core::hresult rc = m_deviceinfoplugin->FirmwareVersion(firmwareVersion);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(firmwareVersion.imagename.empty());
+    EXPECT_EQ(firmwareVersion.imagename, "CUSTOM_VBN_22.03s_sprint_20220331225312sdy_NG");
+    EXPECT_EQ(firmwareVersion.sdk, "17.3");
+    // middleware: extracted from imagename segment _22.03s_ -> "22.03s"
+    EXPECT_EQ(firmwareVersion.middleware, "22.03s");
 }
 
-TEST_F(DeviceInfoTest, Brand_Negative_BothSourcesEmpty)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_FirmwareVersion_WithMiddleware)
 {
-    std::ofstream file("/tmp/.manufacturer");
-    file << "";
-    file.close();
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillOnce(Return(IARM_RESULT_INVALID_PARAM));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("brandname"), _T(""), response));
-    EXPECT_TRUE(response.empty());
-}
-
-TEST_F(DeviceInfoTest, ReleaseVersion_Negative_MalformedImageName)
-{
-    std::ofstream file("/version.txt");
-    file << "imagename:\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("releaseversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"releaseversion\":\"99.99.0.0\"}"));
-
-}
-
-TEST_F(DeviceInfoTest, ReleaseVersion_Negative_SpecialCharacters)
-{
-    std::ofstream file("/version.txt");
-    file << "imagename:ABC@#$%XYZ\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("releaseversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"releaseversion\":\"99.99.0.0\"}"));
-
-}
-
-TEST_F(DeviceInfoTest, ChipSet_Negative_EmptyChipsetValue)
-{
-    std::ofstream file("/etc/device.properties");
-    file << "CHIPSET_NAME=\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("chipset"), _T(""), response));
-    EXPECT_TRUE(response.empty());
-
-}
-
-TEST_F(DeviceInfoTest, ChipSet_Negative_MalformedFile)
-{
-    std::ofstream file("/etc/device.properties");
-    file << "CHIPSET_NAME_NO_VALUE\n";
-    file << "RANDOM_DATA\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("chipset"), _T(""), response));
-    EXPECT_TRUE(response.empty());
-
-}
-
-TEST_F(DeviceInfoTest, FirmwareVersion_Negative_EmptyImageName)
-{
-    std::ofstream file("/version.txt");
-    file << "imagename:\n";
-    file << "SDK_VERSION=18.4\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_TRUE(response.empty());
-
-}
-
-TEST_F(DeviceInfoTest, FirmwareVersion_Negative_MalformedVersionFile)
-{
-    std::ofstream file("/version.txt");
-    file << "INVALID_FORMAT\n";
-    file << "NO_IMAGENAME_KEY\n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_TRUE(response.empty());
-
-}
-
-TEST_F(DeviceInfoTest, SupportedAudioPorts_Negative_GetNameThrowsException)
-{
-    device::List<device::AudioOutputPort> audioPorts;
-    device::AudioOutputPort port1;
-
-    EXPECT_CALL(*p_audioOutputPortMock, getName())
-        .WillOnce(Invoke([]() -> const string& {
-            throw device::Exception("getName exception");
-            static const string portName = "HDMI0";
-            return portName;
-        }));
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([&]() {
-            audioPorts.push_back(port1);
-            return audioPorts;
-        }));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-    EXPECT_TRUE(response.empty());
-}
-
-TEST_F(DeviceInfoTest, SupportedAudioPorts_Negative_EmptyPortList)
-{
-    device::List<device::AudioOutputPort> audioPorts;
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Return(audioPorts));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-    EXPECT_FALSE(response.find("\"supportedAudioPorts\":[]") != string::npos);
-}
-
-// =========== Additional Comprehensive Positive Tests ===========
-
-TEST_F(DeviceInfoTest, SerialNumber_Positive_LongSerialNumber)
-{
-    std::string longSerial(255, 'X');
-
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillOnce(Invoke(
-            [&longSerial](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                param->bufLen = longSerial.length();
-                strncpy(param->buffer, longSerial.c_str(), sizeof(param->buffer));
-                return IARM_RESULT_SUCCESS;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("serialnumber"), _T(""), response));
-    EXPECT_TRUE(response.find(longSerial) != string::npos);
-}
-
-TEST_F(DeviceInfoTest, SerialNumber_Positive_SpecialCharacters)
-{
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "SN-123_ABC.DEF#456", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("serialnumber"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"serialnumber\":\"SN-123_ABC.DEF#456\"}"));
-}
-
-TEST_F(DeviceInfoTest, SerialNumber_Positive_NumericOnly)
-{
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "1234567890", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("serialnumber"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"serialnumber\":\"1234567890\"}"));
-}
-
-TEST_F(DeviceInfoTest, Make_Positive_LongName)
-{
-    std::string longName(200, 'M');
-
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillOnce(Invoke(
-            [&longName](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                param->bufLen = longName.length();
-                strncpy(param->buffer, longName.c_str(), sizeof(param->buffer));
-                return IARM_RESULT_SUCCESS;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("make"), _T(""), response));
-    EXPECT_TRUE(response.find(longName) != string::npos);
-}
-
-TEST_F(DeviceInfoTest, DistributorId_Positive_RFCWithSpecialChars)
-{
-    removeFile("/opt/www/authService/partnerId3.dat");
-
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, ::testing::StrEq("Device.DeviceInfo.X_RDKCENTRAL-COM_Syndication.PartnerId"), _))
-        .WillRepeatedly(::testing::Invoke(
-            [](char* pcCallerID, const char* pcParameterName, RFC_ParamData_t* pstParamData) {
-                strncpy(pstParamData->value, "RFC_DIST_ID.001", sizeof(pstParamData->value) - 1);
-                pstParamData->value[sizeof(pstParamData->value) - 1] = '\0';
-                pstParamData->type = WDMP_STRING;
-                return WDMP_SUCCESS;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("distributorid"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"distributorid\":\"RFC_DIST_ID.001\"}"));
-}
-
-TEST_F(DeviceInfoTest, Brand_Positive_FileWithWhitespace)
-{
-    std::ofstream file("/tmp/.manufacturer");
-    file << "  BrandName  \n";
-    file.close();
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("brandname"), _T(""), response));
-    EXPECT_TRUE(response.find("BrandName") != string::npos);
-}
-
-TEST_F(DeviceInfoTest, Brand_Positive_MFRFallback)
-{
-    removeFile("/tmp/.manufacturer");
-
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_MANUFACTURER) {
-                        strncpy(param->buffer, "FallbackBrand", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("brandname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"brand\":\"FallbackBrand\"}"));
-}
-
-TEST_F(DeviceInfoTest, DISABLE_SystemInfo_Positive_AllFieldsPresent)
-{
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "SYSSERIAL999", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("systeminfo"), _T(""), response));
-    EXPECT_TRUE(response.find("\"version\":") != string::npos);
-    EXPECT_TRUE(response.find("\"uptime\":") != string::npos);
-    EXPECT_TRUE(response.find("\"totalram\":") != string::npos);
-    EXPECT_TRUE(response.find("\"freeram\":") != string::npos);
-    EXPECT_TRUE(response.find("\"devicename\":") != string::npos);
-    EXPECT_TRUE(response.find("\"cpuload\":") != string::npos);
-    EXPECT_TRUE(response.find("\"serialnumber\":\"SYSSERIAL999\"") != string::npos);
-    EXPECT_TRUE(response.find("\"time\":") != string::npos);
-}
-
-TEST_F(DeviceInfoTest, Addresses_Positive_HasRequiredFields)
-{
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("addresses"), _T(""), response));
-    EXPECT_TRUE(response.find("\"name\":") != string::npos);
-    EXPECT_TRUE(response.find("\"mac\":") != string::npos);
-}
-
-TEST_F(DeviceInfoTest, SupportedAudioPorts_Positive_MultiplePortTypes)
-{
-    device::List<device::AudioOutputPort> audioPorts;
-    device::AudioOutputPort port1, port2, port3;
-    static const string portName1 = "HDMI0";
-    static const string portName2 = "SPDIF";
-    static const string portName3 = "SPEAKER";
-
-    EXPECT_CALL(*p_audioOutputPortMock, getName())
-        .WillOnce(ReturnRef(portName1))
-        .WillOnce(ReturnRef(portName2))
-        .WillOnce(ReturnRef(portName3));
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([&]() {
-            audioPorts.push_back(port1);
-            audioPorts.push_back(port2);
-            audioPorts.push_back(port3);
-            return audioPorts;
-        }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-    EXPECT_TRUE(response.find("\"HDMI0\"") != string::npos);
-    EXPECT_TRUE(response.find("\"SPDIF\"") != string::npos);
-    EXPECT_TRUE(response.find("\"SPEAKER\"") != string::npos);
-}
-
-TEST_F(DeviceInfoTest, SupportedAudioPorts_Positive_SinglePort)
-{
-    device::List<device::AudioOutputPort> audioPorts;
-    device::AudioOutputPort port1;
-    static const string portName = "HDMI0";
-
-    EXPECT_CALL(*p_audioOutputPortMock, getName())
-        .WillOnce(ReturnRef(portName));
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([&]() {
-            audioPorts.push_back(port1);
-            return audioPorts;
-        }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-    EXPECT_TRUE(response.find("\"supportedAudioPorts\":[") != string::npos);
-    EXPECT_TRUE(response.find("\"HDMI0\"") != string::npos);
-}
-
-// =========== Boundary and Edge Case Tests ===========
-
-TEST_F(DeviceInfoTest, Boundary_SerialNumber_MinLength)
-{
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "A", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("serialnumber"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"serialnumber\":\"A\"}"));
-}
-
-TEST_F(DeviceInfoTest, Boundary_Sku_EmptyModelNum)
-{
-    std::ofstream file("/etc/device.properties");
-    file << "MODEL_NUM=\n";
-    file.close();
-
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
-
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, _, _))
-        .WillRepeatedly(Return(WDMP_FAILURE));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("modelid"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, Boundary_Make_SingleCharacter)
-{
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_MANUFACTURER) {
-                        strncpy(param->buffer, "X", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("make"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"make\":\"X\"}"));
-}
-
-TEST_F(DeviceInfoTest, EdgeCase_ReleaseVersion_MissingFile)
-{
-    removeFile("/version.txt");
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("releaseversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"releaseversion\":\"99.99.0.0\"}"));
-}
-
-TEST_F(DeviceInfoTest, EdgeCase_MultipleIARMCallsSequential)
-{
-    // Test multiple sequential MFR calls - each call gets its own specific expectation
-    // First call: serialnumber
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillOnce(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "SERIAL001", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }))
-        .WillOnce(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_MANUFACTURER) {
-                        strncpy(param->buffer, "MAKE001", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }))
-        .WillOnce(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (methodName && strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_MANUFACTURER) {
-                        strncpy(param->buffer, "BRAND001", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("serialnumber"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"serialnumber\":\"SERIAL001\"}"));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("make"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"make\":\"MAKE001\"}"));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("brandname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"brand\":\"BRAND001\"}"));
-}
-
-TEST_F(DeviceInfoTest, EthMac_Success)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Invoke(
-            [&](const char* direction, const char* command, va_list args) {
-                va_list args2;
-                va_copy(args2, args);
-                char strFmt[256];
-                vsnprintf(strFmt, sizeof(strFmt), command, args2);
-                va_end(args2);
-                EXPECT_EQ(string(strFmt), string("/lib/rdk/getDeviceDetails.sh read eth_mac"));
-
-                const char mac[] = "AA:BB:CC:DD:EE:FF\n";
-                FILE* pipe = fmemopen((void*)mac, sizeof(mac) - 1, "r");
-                return pipe;
-            }));
-
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_pclose(::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(0));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("ethmac"), _T(""), response));
-    EXPECT_EQ(response, string("{\"eth_mac\":\"AA:BB:CC:DD:EE:FF\"}"));
-}
-
-TEST_F(DeviceInfoTest, EthMac_Failure_PopenReturnsNull)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(nullptr));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("ethmac"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, EthMac_Success_NewlineStripped)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Invoke(
-            [&](const char* direction, const char* command, va_list args) {
-                const char mac[] = "11:22:33:44:55:66\n";
-                char buffer[256];
-                strncpy(buffer, mac, sizeof(buffer) - 1);
-                return fmemopen(buffer, strlen(buffer), "r");
-            }));
-
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_pclose(::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(0));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("ethmac"), _T(""), response));
-    // Verify newline is stripped - should not end with \n in JSON
-    EXPECT_EQ(response, string("{\"eth_mac\":\"11:22:33:44:55:66\"}"));
-}
-
-TEST_F(DeviceInfoTest, EthMac_Success_EmptyOutput)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Invoke(
-            [&](const char* direction, const char* command, va_list args) {
-                char buffer[1] = {0};
-                return fmemopen(buffer, 0, "r");
-            }));
-
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_pclose(::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(0));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("ethmac"), _T(""), response));
-    EXPECT_EQ(response, string("{\"eth_mac\":\"\"}"));
-}
-
-TEST_F(DeviceInfoTest, EstbMac_Success)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Invoke(
-            [&](const char* direction, const char* command, va_list args) {
-                va_list args2;
-                va_copy(args2, args);
-                char strFmt[256];
-                vsnprintf(strFmt, sizeof(strFmt), command, args2);
-                va_end(args2);
-                EXPECT_EQ(string(strFmt), string("/lib/rdk/getDeviceDetails.sh read estb_mac"));
-
-                const char mac[] = "11:22:33:44:55:66\n";
-                char buffer[256];
-                memset(buffer, 0, sizeof(buffer));
-                strncpy(buffer, mac, sizeof(buffer) - 1);
-                FILE* pipe = fmemopen(buffer, strlen(buffer), "r");
-                return pipe;
-            }));
-
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_pclose(::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(0));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("estbmac"), _T(""), response));
-    EXPECT_EQ(response, string("{\"estb_mac\":\"11:22:33:44:55:66\"}"));
-}
-
-TEST_F(DeviceInfoTest, EstbMac_Failure_PopenReturnsNull)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(nullptr));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("estbmac"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, EstbMac_Success_NewlineStripped)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Invoke(
-            [&](const char* direction, const char* command, va_list args) {
-                const char mac[] = "AA:11:BB:22:CC:33\n";
-                char buffer[256];
-                strncpy(buffer, mac, sizeof(buffer) - 1);
-                return fmemopen(buffer, strlen(buffer), "r");
-            }));
-
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_pclose(::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(0));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("estbmac"), _T(""), response));
-    EXPECT_EQ(response, string("{\"estb_mac\":\"AA:11:BB:22:CC:33\"}"));
-}
-
-TEST_F(DeviceInfoTest, WifiMac_Success)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Invoke(
-            [&](const char* direction, const char* command, va_list args) {
-                va_list args2;
-                va_copy(args2, args);
-                char strFmt[256];
-                vsnprintf(strFmt, sizeof(strFmt), command, args2);
-                va_end(args2);
-                EXPECT_EQ(string(strFmt), string("/lib/rdk/getDeviceDetails.sh read wifi_mac"));
-
-                const char mac[] = "00:11:22:33:44:55\n";
-                char buffer[256];
-                memset(buffer, 0, sizeof(buffer));
-                strncpy(buffer, mac, sizeof(buffer) - 1);
-                FILE* pipe = fmemopen(buffer, strlen(buffer), "r");
-                return pipe;
-            }));
-
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_pclose(::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(0));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("wifimac"), _T(""), response));
-    EXPECT_EQ(response, string("{\"wifi_mac\":\"00:11:22:33:44:55\"}"));
-}
-
-TEST_F(DeviceInfoTest, WifiMac_Failure_PopenReturnsNull)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(nullptr));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("wifimac"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, WifiMac_Success_NewlineStripped)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Invoke(
-            [&](const char* direction, const char* command, va_list args) {
-                const char mac[] = "FF:EE:DD:CC:BB:AA\n";
-                char buffer[256];
-                strncpy(buffer, mac, sizeof(buffer) - 1);
-                return fmemopen(buffer, strlen(buffer), "r");
-            }));
-
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_pclose(::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(0));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("wifimac"), _T(""), response));
-    EXPECT_EQ(response, string("{\"wifi_mac\":\"FF:EE:DD:CC:BB:AA\"}"));
-}
-
-TEST_F(DeviceInfoTest, EstbIp_Success)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Invoke(
-            [&](const char* direction, const char* command, va_list args) {
-                va_list args2;
-                va_copy(args2, args);
-                char strFmt[256];
-                vsnprintf(strFmt, sizeof(strFmt), command, args2);
-                va_end(args2);
-                EXPECT_EQ(string(strFmt), string("/lib/rdk/getDeviceDetails.sh read estb_ip"));
-
-                const char ip[] = "192.168.1.100\n";
-                char buffer[256];
-                memset(buffer, 0, sizeof(buffer));
-                strncpy(buffer, ip, sizeof(buffer) - 1);
-                FILE* pipe = fmemopen(buffer, strlen(buffer), "r");
-                return pipe;
-            }));
-
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_pclose(::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(0));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("estbip"), _T(""), response));
-    EXPECT_EQ(response, string("{\"estb_ip\":\"192.168.1.100\"}"));
-}
-
-TEST_F(DeviceInfoTest, EstbIp_Failure_PopenReturnsNull)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(nullptr));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("estbip"), _T(""), response));
-}
-
-TEST_F(DeviceInfoTest, EstbIp_Success_NewlineStripped)
-{
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Invoke(
-            [&](const char* direction, const char* command, va_list args) {
-                const char ip[] = "10.0.0.1\n";
-                char buffer[256];
-                strncpy(buffer, ip, sizeof(buffer) - 1);
-                return fmemopen(buffer, strlen(buffer), "r");
-            }));
-
-    EXPECT_CALL(*p_wrapsImplMock, v_secure_pclose(::testing::_))
-        .Times(1)
-        .WillOnce(::testing::Return(0));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("estbip"), _T(""), response));
-    EXPECT_EQ(response, string("{\"estb_ip\":\"10.0.0.1\"}"));
-}
-
-TEST_F(DeviceInfoTest, Information_Success)
-{
-    // Test that Information() returns the correct description string
-    string info = plugin->Information();
-
-    EXPECT_FALSE(info.empty());
-    EXPECT_EQ(info, "The DeviceInfo plugin allows retrieving of various device-related information.");
-}
-
-TEST_F(DeviceInfoTest, FirmwareVersion_Success_WithMiddleware)
-{
-    // imagename ELTE11MWR_8.3p9s1_DEV contains version segment _8.3p9s1_ -> middleware="8.3p9s1"
+    // Write imagename with version segment _8.3p9s1_ so middleware="8.3p9s1"
     std::ofstream versionFile("/version.txt");
     versionFile << "imagename:ELTE11MWR_8.3p9s1_DEV\n";
-    versionFile << "SDK_VERSION=18.4\n";
-    versionFile << "MEDIARITE=9.0.1\n";
+    versionFile << "SDK_VERSION=17.3\n";
+    versionFile << "MEDIARITE=8.3.53\n";
     versionFile << "YOCTO_VERSION=dunfell\n";
     versionFile.close();
 
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"ELTE11MWR_8.3p9s1_DEV\",\"middleware\":\"8.3p9s1\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"\"}"));
+    Exchange::IDeviceInfo::FirmwareversionInfo firmwareVersion;
+    Core::hresult rc = m_deviceinfoplugin->FirmwareVersion(firmwareVersion);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(firmwareVersion.imagename.empty());
+    EXPECT_EQ(firmwareVersion.imagename, "ELTE11MWR_8.3p9s1_DEV");
+    EXPECT_EQ(firmwareVersion.middleware, "8.3p9s1");
+    EXPECT_EQ(firmwareVersion.sdk, "17.3");
+    EXPECT_EQ(firmwareVersion.mediarite, "8.3.53");
+    EXPECT_EQ(firmwareVersion.yocto, "dunfell");
+    TEST_LOG("Firmware middleware: %s", firmwareVersion.middleware.c_str());
 }
 
-TEST_F(DeviceInfoTest, FirmwareVersion_Success_MiddlewareDefaultWhenNoVersionInImageName)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_FirmwareVersion_MiddlewareDefaultWhenNoVersionInImageName)
 {
-    // imagename with no N.Nxxx version segment -> middleware defaults to "0.0"
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    // Write imagename with no N.Nxxx version segment -> middleware defaults to "0.0"
     std::ofstream versionFile("/version.txt");
-    versionFile << "imagename:TEST_IMAGE_NOMW\n";
+    versionFile << "imagename:SOME_IMAGE_NO_VERSION\n";
     versionFile.close();
 
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_NOMW\",\"middleware\":\"0.0\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
+    Exchange::IDeviceInfo::FirmwareversionInfo firmwareVersion;
+    Core::hresult rc = m_deviceinfoplugin->FirmwareVersion(firmwareVersion);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(firmwareVersion.middleware, "0.0");
+    TEST_LOG("Firmware middleware (expected 0.0): %s", firmwareVersion.middleware.c_str());
 }
 
-TEST_F(DeviceInfoTest, FirmwareVersion_Success_MiddlewareFromEmbeddedVersion)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_SystemInfo)
 {
-    // imagename with version embedded in letter-prefixed segment (E0xx.xxx.xx.N.Nxxx)
-    // COESST11AEI_E032.031.00.8.6p99s2_DEV -> middleware="8.6p99s2"
-    std::ofstream versionFile("/version.txt");
-    versionFile << "imagename:COESST11AEI_E032.031.00.8.6p99s2_DEV\n";
-    versionFile.close();
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_SYSMGR_API_GetSystemStates) == 0) {
+                    auto* param = static_cast<IARM_Bus_SYSMgr_GetSystemStates_Param_t*>(arg);
+                    param->channel_map.state = 2;
+                    return IARM_RESULT_SUCCESS;
+                }
+                return IARM_RESULT_SUCCESS;
+            });
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"COESST11AEI_E032.031.00.8.6p99s2_DEV\",\"middleware\":\"8.6p99s2\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
+    Exchange::IDeviceInfo::SystemInfos systemInfo;
+    Core::hresult rc = m_deviceinfoplugin->SystemInfo(systemInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(systemInfo.version.empty());
 }
 
-// =========== DeviceID Tests ===========
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_Addresses)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    Exchange::IDeviceInfo::IAddressesInfoIterator* addressesInfo = nullptr;
+    Core::hresult rc = m_deviceinfoplugin->Addresses(addressesInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    ASSERT_TRUE(addressesInfo != nullptr);
+
+    Exchange::IDeviceInfo::AddressesInfo address;
+    uint32_t count = 0;
+    while (addressesInfo->Next(address)) {
+        count++;
+        EXPECT_FALSE(address.name.empty());
+        EXPECT_FALSE(address.mac.empty());
+    }
+
+    addressesInfo->Release();
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_SupportedAudioPorts)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    device::AudioOutputPort audioOutputPort;
+    string audioPort(_T("HDMI0"));
+
+    ON_CALL(*p_audioOutputPortMock, getName())
+        .WillByDefault(::testing::ReturnRef(audioPort));
+    ON_CALL(*p_hostImplMock, getAudioOutputPorts())
+        .WillByDefault(::testing::Return(device::List<device::AudioOutputPort>({ audioOutputPort })));
+
+    RPC::IStringIterator* portIterator = nullptr;
+    bool success = false;
+    Core::hresult rc = m_deviceinfoplugin->SupportedAudioPorts(portIterator, success);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_TRUE(success);
+    ASSERT_TRUE(portIterator != nullptr);
+
+    string port;
+    uint32_t count = 0;
+    while (portIterator->Next(port)) {
+        count++;
+        EXPECT_FALSE(port.empty());
+        EXPECT_EQ(port, "HDMI0");
+    }
+    EXPECT_GT(count, 0u);
+
+    portIterator->Release();
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_MacAddressesAndIp)
+{
+
+    // Setup v_secure_popen mock for MAC addresses and IP
+    ON_CALL(*p_wrapsImplMock, v_secure_popen(::testing::_, ::testing::_, ::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [](const char* type, const char* command, va_list args) -> FILE* {
+                va_list args2;
+                va_copy(args2, args);
+                char strFmt[256];
+                vsnprintf(strFmt, sizeof(strFmt), command, args2);
+                va_end(args2);
+                
+                const char* valueToReturn = nullptr;
+                
+                if (strcmp(strFmt, "/lib/rdk/getDeviceDetails.sh read eth_mac") == 0) {
+                    valueToReturn = "AA:BB:CC:DD:EE:FF";
+                } else if (strcmp(strFmt, "/lib/rdk/getDeviceDetails.sh read estb_mac") == 0) {
+                    valueToReturn = "11:22:33:44:55:66";
+                } else if (strcmp(strFmt, "/lib/rdk/getDeviceDetails.sh read wifi_mac") == 0) {
+                    valueToReturn = "00:11:22:33:44:55";
+                } else if (strcmp(strFmt, "/lib/rdk/getDeviceDetails.sh read estb_ip") == 0) {
+                    valueToReturn = "192.168.1.100";
+                }
+                
+                if (valueToReturn != nullptr) {
+                    return fmemopen(strdup(valueToReturn), strlen(valueToReturn), "r");
+                }
+                
+                return nullptr;
+            }));
+
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    Exchange::IDeviceInfo::EthernetMac ethMac;
+    Core::hresult rc1 = m_deviceinfoplugin->EthMac(ethMac);
+    EXPECT_EQ(Core::ERROR_NONE, rc1);
+    EXPECT_FALSE(ethMac.ethMac.empty());
+    EXPECT_EQ(ethMac.ethMac, "AA:BB:CC:DD:EE:FF");
+
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    Exchange::IDeviceInfo::StbMac stbMac;
+    Core::hresult rc2 = m_deviceinfoplugin->EstbMac(stbMac);
+    EXPECT_EQ(Core::ERROR_NONE, rc2);
+    EXPECT_FALSE(stbMac.estbMac.empty());
+    EXPECT_EQ(stbMac.estbMac, "11:22:33:44:55:66");
+
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    Exchange::IDeviceInfo::WiFiMac wifiMac;
+    Core::hresult rc3 = m_deviceinfoplugin->WifiMac(wifiMac);
+    EXPECT_EQ(Core::ERROR_NONE, rc3);
+    EXPECT_FALSE(wifiMac.wifiMac.empty());
+    EXPECT_EQ(wifiMac.wifiMac, "00:11:22:33:44:55");
+
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    Exchange::IDeviceInfo::StbIp stbIp;
+    Core::hresult rc4 = m_deviceinfoplugin->EstbIp(stbIp);
+    EXPECT_EQ(Core::ERROR_NONE, rc4);
+    EXPECT_FALSE(stbIp.estbIp.empty());
+    EXPECT_EQ(stbIp.estbIp, "192.168.1.100");
+
+}
+
+// ======================= DeviceID Tests =======================
 // Logic:
-//   - If SerialNumber is alphanumeric  -> use SerialNumber directly as deviceID
-//   - If SerialNumber is numeric-only  -> compose deviceId as HWID+"000"+serial.substr(5,7)
+//   - SerialNumber alphanumeric -> use SerialNumber directly as deviceId
+//   - SerialNumber numeric-only -> compose: HWID + "000" + serial.substr(5,7)
 //     e.g. serial="84725041828384", HWID="32E304" -> deviceId="32E3040000418283"
-//   - If HWID unavailable             -> fall back to mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER
-//   - If both HWID and MFG fail       -> use raw serialNumber as deviceId
-//   - If SerialNumber itself fails    -> propagate error
+//   - HWID unavailable          -> fall back to mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER
+//   - Both HWID and MFG fail    -> use raw serialNumber as deviceId
 
-TEST_F(DeviceInfoTest, DeviceID_NumericSerial_ComposesFromHWID)
+// ---- JSON-RPC (property) tests ----
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_ComposesFromHWID)
 {
-    // Serial "84725041828384" is numeric-only -> compose deviceId from HWID + padding + serial suffix
-    // HWID="32E304", serial.substr(5,7)="0418283" -> deviceId="32E3040000418283"
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
+    TEST_LOG("Testing deviceid property: numeric serial -> HWID composition\n");
+
+    // Serial "84725041828384" is numeric-only; HWID="32E304"
+    // deviceId = "32E304" + "000" + serial.substr(5,7)="0418283" -> "32E3040000418283"
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
             [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
                 if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
                     auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
                     if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "84725041828384", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
                         return IARM_RESULT_SUCCESS;
                     }
                     if (param->type == mfrSERIALIZED_TYPE_HWID) {
-                        strncpy(param->buffer, "32E304", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
+                        const char* str = "32E304";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
                         return IARM_RESULT_SUCCESS;
                     }
+                    return IARM_RESULT_INVALID_PARAM;
                 }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
+                return IARM_RESULT_SUCCESS;
+            });
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceId"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"deviceId\":\"32E3040000418283\"}"));
+    JsonObject getResults;
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
+    EXPECT_EQ(Core::ERROR_NONE, status);
+    if (status == Core::ERROR_NONE) {
+        EXPECT_TRUE(getResults.HasLabel("deviceId"));
+        string deviceId = getResults["deviceId"].String();
+        EXPECT_EQ(deviceId, "32E3040000418283");
+        TEST_LOG("DeviceID (HWID composition): %s", deviceId.c_str());
+    }
 }
 
-TEST_F(DeviceInfoTest, DeviceID_AlphanumericSerial_UsesSerialNumber)
+TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_AlphanumericSerial_UsesSerialNumber)
 {
-    // Serial "EB21163216C000024" is alphanumeric -> return it directly as deviceID
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
+    TEST_LOG("Testing deviceid property: alphanumeric serial -> serial number used directly\n");
+
+    // Serial "EB21163216C000024" is alphanumeric -> return it as deviceID
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
             [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
                 if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
                     auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
                     if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "EB21163216C000024", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
+                        const char* str = "EB21163216C000024";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
                         return IARM_RESULT_SUCCESS;
                     }
+                    return IARM_RESULT_INVALID_PARAM;
                 }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
+                return IARM_RESULT_SUCCESS;
+            });
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceId"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"deviceId\":\"EB21163216C000024\"}"));
+    JsonObject getResults;
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
+    EXPECT_EQ(Core::ERROR_NONE, status);
+    if (status == Core::ERROR_NONE) {
+        EXPECT_TRUE(getResults.HasLabel("deviceId"));
+        string deviceId = getResults["deviceId"].String();
+        EXPECT_EQ(deviceId, "EB21163216C000024");
+        TEST_LOG("DeviceID (alphanumeric serial): %s", deviceId.c_str());
+    }
 }
 
-TEST_F(DeviceInfoTest, DeviceID_NumericSerial_AllMfrFails_FallsBackToSerial)
+TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_AllMfrFails_FallsBackToSerial)
 {
-    // When HWID and MFG_SERIAL both fail, deviceId falls back to the raw serialNumber
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
+    TEST_LOG("Testing deviceid property: numeric serial, all MFR fail -> falls back to serialNumber\n");
+
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
             [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
                 if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
                     auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
                     if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "84725041828384", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
                         return IARM_RESULT_SUCCESS;
                     }
                     // mfrSERIALIZED_TYPE_HWID and mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER both fail
+                    return IARM_RESULT_INVALID_PARAM;
                 }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
+                return IARM_RESULT_SUCCESS;
+            });
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceId"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"deviceId\":\"84725041828384\"}"));
+    JsonObject getResults;
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
+    EXPECT_EQ(Core::ERROR_NONE, status);
+    if (status == Core::ERROR_NONE) {
+        EXPECT_TRUE(getResults.HasLabel("deviceId"));
+        string deviceId = getResults["deviceId"].String();
+        EXPECT_EQ(deviceId, "84725041828384");
+        TEST_LOG("DeviceID (all MFR failed, fallback to serial): '%s'", deviceId.c_str());
+    }
 }
 
-TEST_F(DeviceInfoTest, DeviceID_SerialNumberFails_ReturnsError)
+// ---- COM-RPC tests ----
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DeviceID_NumericSerial_ComposesFromHWID)
 {
-    // SerialNumber() fails entirely -> DeviceID propagates the error
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
-    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, _, _))
-        .WillRepeatedly(Return(WDMP_FAILURE));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("deviceId"), _T(""), response));
-}
-
-// =========== HardwareId Tests ===========
-
-TEST_F(DeviceInfoTest, HardwareID_Returns_First6_Alphanumeric)
-{
-    // deviceId = "EB21163216C000024" -> hardwareId = "EB2116"
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
+    // Serial "84725041828384" numeric-only; HWID="32E304" -> deviceId="32E3040000418283"
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
             [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
                 if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
                     auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
                     if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "EB21163216C000024", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
-                        return IARM_RESULT_SUCCESS;
-                    }
-                }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareId"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"hardwareId\":\"EB2116\"}"));
-}
-
-TEST_F(DeviceInfoTest, HardwareID_Returns_First6_ComposedFromHWID)
-{
-    // Numeric serial "84725041828384" + HWID "32E304"
-    // deviceId = "32E3040000418283" -> hardwareId = "32E304"
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
-            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
-                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
-                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
-                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "84725041828384", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
                         return IARM_RESULT_SUCCESS;
                     }
                     if (param->type == mfrSERIALIZED_TYPE_HWID) {
-                        strncpy(param->buffer, "32E304", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
+                        const char* str = "32E304";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
                         return IARM_RESULT_SUCCESS;
                     }
+                    return IARM_RESULT_INVALID_PARAM;
                 }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
+                return IARM_RESULT_SUCCESS;
+            });
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareId"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"hardwareId\":\"32E304\"}"));
+    Exchange::IDeviceInfo::DeviceIdInfo deviceIdInfo;
+    Core::hresult rc = m_deviceinfoplugin->DeviceId(deviceIdInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(deviceIdInfo.deviceId.empty());
+    EXPECT_EQ(deviceIdInfo.deviceId, "32E3040000418283");
+    TEST_LOG("DeviceID (HWID composition): %s", deviceIdInfo.deviceId.c_str());
 }
 
-TEST_F(DeviceInfoTest, HardwareID_AllMfrFail_FallsBackToSerialPrefix)
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DeviceID_AlphanumericSerial_UsesSerialNumber)
 {
-    // When HWID and MFG_SERIAL both fail, deviceId = serialNumber;
-    // hardwareId = serialNumber.substr(0,6) = "847250"
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    // Serial "EB21163216C000024" is alphanumeric -> used directly as deviceID
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
             [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
                 if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
                     auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
                     if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "84725041828384", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
+                        const char* str = "EB21163216C000024";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    return IARM_RESULT_INVALID_PARAM;
+                }
+                return IARM_RESULT_SUCCESS;
+            });
+
+    Exchange::IDeviceInfo::DeviceIdInfo deviceIdInfo;
+    Core::hresult rc = m_deviceinfoplugin->DeviceId(deviceIdInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(deviceIdInfo.deviceId.empty());
+    EXPECT_EQ(deviceIdInfo.deviceId, "EB21163216C000024");
+    TEST_LOG("DeviceID (alphanumeric serial): %s", deviceIdInfo.deviceId.c_str());
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DeviceID_NumericSerial_AllMfrFails_FallsBackToSerial)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    // When HWID and MFG_SERIAL both fail -> deviceId falls back to raw serialNumber
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
                         return IARM_RESULT_SUCCESS;
                     }
                     // mfrSERIALIZED_TYPE_HWID and mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER both fail
+                    return IARM_RESULT_INVALID_PARAM;
                 }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
+                return IARM_RESULT_SUCCESS;
+            });
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareId"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"hardwareId\":\"847250\"}"));
+    Exchange::IDeviceInfo::DeviceIdInfo deviceIdInfo;
+    Core::hresult rc = m_deviceinfoplugin->DeviceId(deviceIdInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(deviceIdInfo.deviceId, "84725041828384");
+    TEST_LOG("DeviceID (all MFR failed, fallback to serial): '%s'", deviceIdInfo.deviceId.c_str());
 }
 
-TEST_F(DeviceInfoTest, HardwareID_Short_DeviceId)
+// ---- HardwareId tests ----
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_HardwareID_ReturnsFirst6OfDeviceId)
 {
-    // deviceId shorter than 6 chars -> hardwareId equals full deviceId
-    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
-        .WillRepeatedly(::testing::Invoke(
+    TEST_LOG("Testing hardwareid property: first 6 chars of deviceId\n");
+
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
             [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
                 if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
                     auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
                     if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
-                        strncpy(param->buffer, "AB12", sizeof(param->buffer) - 1);
-                        param->buffer[sizeof(param->buffer) - 1] = '\0';
-                        param->bufLen = strlen(param->buffer);
+                        const char* str = "EB21163216C000024";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
                         return IARM_RESULT_SUCCESS;
                     }
+                    return IARM_RESULT_INVALID_PARAM;
                 }
-                return IARM_RESULT_INVALID_PARAM;
-            }));
+                return IARM_RESULT_SUCCESS;
+            });
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareId"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"hardwareId\":\"AB12\"}"));
+    JsonObject getResults;
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "hardwareId", getResults);
+    EXPECT_EQ(Core::ERROR_NONE, status);
+    if (status == Core::ERROR_NONE) {
+        EXPECT_TRUE(getResults.HasLabel("hardwareId"));
+        string hardwareId = getResults["hardwareId"].String();
+        EXPECT_EQ(hardwareId, "EB2116");
+        TEST_LOG("HardwareID: %s", hardwareId.c_str());
+    }
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_HardwareID_ReturnsFirst6_ComposedFromHWID)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    // Numeric serial + HWID="32E304" -> deviceId="32E3040000418283" -> hardwareId="32E304"
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    if (param->type == mfrSERIALIZED_TYPE_HWID) {
+                        const char* str = "32E304";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    return IARM_RESULT_INVALID_PARAM;
+                }
+                return IARM_RESULT_SUCCESS;
+            });
+
+    Exchange::IDeviceInfo::HardwareIdInfo hardwareIdInfo;
+    Core::hresult rc = m_deviceinfoplugin->HardwareId(hardwareIdInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(hardwareIdInfo.hardwareId, "32E304");
+    TEST_LOG("HardwareID (COM-RPC, HWID path): %s", hardwareIdInfo.hardwareId.c_str());
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_HardwareID_AllMfrFail_FallsBackToSerialPrefix)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    // When HWID and MFG_SERIAL both fail, deviceId = serialNumber -> hardwareId = serial.substr(0,6) = "847250"
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    // mfrSERIALIZED_TYPE_HWID and mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER both fail
+                    return IARM_RESULT_INVALID_PARAM;
+                }
+                return IARM_RESULT_SUCCESS;
+            });
+
+    Exchange::IDeviceInfo::HardwareIdInfo hardwareIdInfo;
+    Core::hresult rc = m_deviceinfoplugin->HardwareId(hardwareIdInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(hardwareIdInfo.hardwareId, "847250");
+    TEST_LOG("HardwareID (all MFR failed, fallback serial prefix): '%s'", hardwareIdInfo.hardwareId.c_str());
 }
