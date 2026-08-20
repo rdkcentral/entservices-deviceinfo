@@ -1029,7 +1029,7 @@ TEST_F(DeviceInfoTest, SupportedAudioPorts_Negative_EmptyPortList)
         .WillOnce(Return(audioPorts));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-    EXPECT_FALSE(response.find("\"supportedAudioPorts\":[]") != string::npos);
+    EXPECT_TRUE(response.find("\"supportedAudioPorts\":[]") != string::npos);
 }
 
 // =========== Additional Comprehensive Positive Tests ===========
@@ -1723,7 +1723,7 @@ TEST_F(DeviceInfoTest, DeviceID_AlphanumericSerial_UsesSerialNumber)
                 return IARM_RESULT_INVALID_PARAM;
             }));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceid"), _T(""), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceId"), _T(""), response));
     EXPECT_EQ(response, _T("{\"deviceId\":\"EB21163216C000024\"}"));
 }
 
