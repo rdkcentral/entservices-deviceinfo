@@ -2141,3 +2141,298 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_MacAddressesAndIp)
     EXPECT_EQ(stbIp.estbIp, "192.168.1.100");
 
 }
+
+// ======================= DeviceID Tests =======================
+// Logic:
+//   - SerialNumber alphanumeric -> use SerialNumber directly as deviceId
+//   - SerialNumber numeric-only -> compose: HWID + "000" + serial.substr(5,7)
+//     e.g. serial="84725041828384", HWID="32E304" -> deviceId="32E3040000418283"
+//   - HWID unavailable          -> fall back to mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER
+//   - Both HWID and MFG fail    -> use raw serialNumber as deviceId
+
+// ---- JSON-RPC (property) tests ----
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_ComposesFromHWID)
+{
+    TEST_LOG("Testing deviceid property: numeric serial -> HWID composition\n");
+
+    // Serial "84725041828384" is numeric-only; HWID="32E304"
+    // deviceId = "32E304" + "000" + serial.substr(5,7)="0418283" -> "32E3040000418283"
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    if (param->type == mfrSERIALIZED_TYPE_HWID) {
+                        const char* str = "32E304";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            });
+
+    JsonObject getResults;
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
+    EXPECT_EQ(Core::ERROR_NONE, status);
+    if (status == Core::ERROR_NONE) {
+        EXPECT_TRUE(getResults.HasLabel("deviceId"));
+        string deviceId = getResults["deviceId"].String();
+        EXPECT_EQ(deviceId, "32E3040000418283");
+        TEST_LOG("DeviceID (HWID composition): %s", deviceId.c_str());
+    }
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_AlphanumericSerial_UsesSerialNumber)
+{
+    TEST_LOG("Testing deviceid property: alphanumeric serial -> serial number used directly\n");
+
+    // Serial "EB21163216C000024" is alphanumeric -> return it as deviceID
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "EB21163216C000024";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            });
+
+    JsonObject getResults;
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
+    EXPECT_EQ(Core::ERROR_NONE, status);
+    if (status == Core::ERROR_NONE) {
+        EXPECT_TRUE(getResults.HasLabel("deviceId"));
+        string deviceId = getResults["deviceId"].String();
+        EXPECT_EQ(deviceId, "EB21163216C000024");
+        TEST_LOG("DeviceID (alphanumeric serial): %s", deviceId.c_str());
+    }
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_DeviceID_NumericSerial_AllMfrFails_FallsBackToSerial)
+{
+    TEST_LOG("Testing deviceid property: numeric serial, all MFR fail -> falls back to serialNumber\n");
+
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    // mfrSERIALIZED_TYPE_HWID and mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER both fail
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            });
+
+    JsonObject getResults;
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "deviceId", getResults);
+    EXPECT_EQ(Core::ERROR_NONE, status);
+    if (status == Core::ERROR_NONE) {
+        EXPECT_TRUE(getResults.HasLabel("deviceId"));
+        string deviceId = getResults["deviceId"].String();
+        EXPECT_EQ(deviceId, "84725041828384");
+        TEST_LOG("DeviceID (all MFR failed, fallback to serial): '%s'", deviceId.c_str());
+    }
+}
+
+// ---- COM-RPC tests ----
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DeviceID_NumericSerial_ComposesFromHWID)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    // Serial "84725041828384" numeric-only; HWID="32E304" -> deviceId="32E3040000418283"
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    if (param->type == mfrSERIALIZED_TYPE_HWID) {
+                        const char* str = "32E304";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            });
+
+    Exchange::IDeviceInfo::DeviceIdInfo deviceIdInfo;
+    Core::hresult rc = m_deviceinfoplugin->DeviceId(deviceIdInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(deviceIdInfo.deviceId.empty());
+    EXPECT_EQ(deviceIdInfo.deviceId, "32E3040000418283");
+    TEST_LOG("DeviceID (HWID composition): %s", deviceIdInfo.deviceId.c_str());
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DeviceID_AlphanumericSerial_UsesSerialNumber)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    // Serial "EB21163216C000024" is alphanumeric -> used directly as deviceID
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "EB21163216C000024";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            });
+
+    Exchange::IDeviceInfo::DeviceIdInfo deviceIdInfo;
+    Core::hresult rc = m_deviceinfoplugin->DeviceId(deviceIdInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(deviceIdInfo.deviceId.empty());
+    EXPECT_EQ(deviceIdInfo.deviceId, "EB21163216C000024");
+    TEST_LOG("DeviceID (alphanumeric serial): %s", deviceIdInfo.deviceId.c_str());
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DeviceID_NumericSerial_AllMfrFails_FallsBackToSerial)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    // When HWID and MFG_SERIAL both fail -> deviceId falls back to raw serialNumber
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    // mfrSERIALIZED_TYPE_HWID and mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER both fail
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            });
+
+    Exchange::IDeviceInfo::DeviceIdInfo deviceIdInfo;
+    Core::hresult rc = m_deviceinfoplugin->DeviceId(deviceIdInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(deviceIdInfo.deviceId, "84725041828384");
+    TEST_LOG("DeviceID (all MFR failed, fallback to serial): '%s'", deviceIdInfo.deviceId.c_str());
+}
+
+// ---- HardwareId tests ----
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_JsonRpc_HardwareID_ReturnsFirst6OfDeviceId)
+{
+    TEST_LOG("Testing hardwareid property: first 6 chars of deviceId\n");
+
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "EB21163216C000024";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            });
+
+    JsonObject getResults;
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "hardwareId", getResults);
+    EXPECT_EQ(Core::ERROR_NONE, status);
+    if (status == Core::ERROR_NONE) {
+        EXPECT_TRUE(getResults.HasLabel("hardwareId"));
+        string hardwareId = getResults["hardwareId"].String();
+        EXPECT_EQ(hardwareId, "EB2116");
+        TEST_LOG("HardwareID: %s", hardwareId.c_str());
+    }
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_HardwareID_ReturnsFirst6_ComposedFromHWID)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    // Numeric serial + HWID="32E304" -> deviceId="32E3040000418283" -> hardwareId="32E304"
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    if (param->type == mfrSERIALIZED_TYPE_HWID) {
+                        const char* str = "32E304";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            });
+
+    Exchange::IDeviceInfo::HardwareIdInfo hardwareIdInfo;
+    Core::hresult rc = m_deviceinfoplugin->HardwareId(hardwareIdInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(hardwareIdInfo.hardwareId, "32E304");
+    TEST_LOG("HardwareID (COM-RPC, HWID path): %s", hardwareIdInfo.hardwareId.c_str());
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_HardwareID_AllMfrFail_FallsBackToSerialPrefix)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    // When HWID and MFG_SERIAL both fail, deviceId = serialNumber -> hardwareId = serial.substr(0,6) = "847250"
+    ON_CALL(*p_iarmBusImplMock, IARM_Bus_Call)
+        .WillByDefault(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        const char* str = "84725041828384";
+                        param->bufLen = strlen(str);
+                        strncpy(param->buffer, str, sizeof(param->buffer));
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    // mfrSERIALIZED_TYPE_HWID and mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER both fail
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            });
+
+    Exchange::IDeviceInfo::HardwareIdInfo hardwareIdInfo;
+    Core::hresult rc = m_deviceinfoplugin->HardwareId(hardwareIdInfo);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(hardwareIdInfo.hardwareId, "847250");
+    TEST_LOG("HardwareID (all MFR failed, fallback serial prefix): '%s'", hardwareIdInfo.hardwareId.c_str());
+}
