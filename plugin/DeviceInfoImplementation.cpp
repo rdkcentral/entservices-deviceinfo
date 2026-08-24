@@ -503,5 +503,52 @@ namespace Plugin {
 
         return result;
     }
+
+    Core::hresult DeviceInfoImplementation::DeviceId(DeviceIdInfo& deviceIdInfo) const
+    {
+        if (_deviceIDCached) {
+            deviceIdInfo.deviceId = _cachedDeviceID;
+            return Core::ERROR_NONE;
+        }
+
+        DeviceSerialNo deviceSerialNo;
+        Core::hresult result = SerialNumber(deviceSerialNo);
+        if (result == Core::ERROR_NONE) {
+            const string& serialNumber = deviceSerialNo.serialnumber;
+            bool isNumericOnly = !serialNumber.empty() &&
+                std::all_of(serialNumber.begin(), serialNumber.end(),
+                    [](unsigned char c) { return std::isdigit(c); });
+
+            // if the Device Serial Number is alphanumeric, then we will return the serial number as deviceID.
+            // else we will get the deviceID from MfgSerialNumber.
+            if (!isNumericOnly) {
+                deviceIdInfo.deviceId = serialNumber;
+            } else {
+                string mfgHwid;
+                if (GetMFRData(mfrSERIALIZED_TYPE_HWID, mfgHwid) == Core::ERROR_NONE && !mfgHwid.empty()) {
+                    deviceIdInfo.deviceId = mfgHwid + "000" + serialNumber.substr(5,7);
+                } else {
+                    if (GetMFRData(mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER, deviceIdInfo.deviceId) != Core::ERROR_NONE) {
+                        deviceIdInfo.deviceId = serialNumber;
+                    }
+                }
+            }
+
+            _cachedDeviceID = deviceIdInfo.deviceId;
+            _deviceIDCached = true;
+        }
+
+        return result;
+    }
+
+    Core::hresult DeviceInfoImplementation::HardwareId(HardwareIdInfo& hardwareIdInfo) const
+    {
+        DeviceIdInfo deviceIdInfo;
+        Core::hresult result = DeviceId(deviceIdInfo);
+        if (result == Core::ERROR_NONE) {
+            hardwareIdInfo.hardwareId = deviceIdInfo.deviceId.substr(0, 6);
+        }
+        return result;
+    }
 }
 }

@@ -64,12 +64,16 @@ namespace Plugin {
         Core::hresult WifiMac(WiFiMac& wiFiMa) const override;
         Core::hresult EstbIp(StbIp& stbIp) const override;
         Core::hresult SupportedAudioPorts(RPC::IStringIterator*& supportedAudioPorts, bool& success) const override;
+        Core::hresult DeviceId(DeviceIdInfo& deviceIdInfo) const override;
+        Core::hresult HardwareId(HardwareIdInfo& hardwareIdInfo) const override;
 
         // IConfiguration interface
         uint32_t Configure(PluginHost::IShell* service) override;
 
     private:
         PluginHost::IShell* _service;
+        mutable string _cachedDeviceID;
+        mutable bool _deviceIDCached { false };
     };
 }
 }
