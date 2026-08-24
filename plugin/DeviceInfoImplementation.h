@@ -65,6 +65,8 @@ namespace Plugin {
         Core::hresult WifiMac(WiFiMac& wiFiMa) const override;
         Core::hresult EstbIp(StbIp& stbIp) const override;
         Core::hresult SupportedAudioPorts(RPC::IStringIterator*& supportedAudioPorts, bool& success) const override;
+        Core::hresult DeviceId(DeviceIdInfo& deviceIdInfo) const override;
+        Core::hresult HardwareId(HardwareIdInfo& hardwareIdInfo) const override;
         Core::hresult OsName(DeviceOsName& deviceOsName) const override;
         Core::hresult OsName(const DeviceOsName &deviceOsName) override;
         Core::hresult OsVersion(DeviceOsVersion& deviceOsVersion) const override;
@@ -75,6 +77,8 @@ namespace Plugin {
 
     private:
         PluginHost::IShell* _service;
+        mutable string _cachedDeviceID;
+        mutable bool _deviceIDCached { false };
         mutable std::mutex _osPropertiesMutex;
     };
 }
