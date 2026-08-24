@@ -65,10 +65,10 @@ namespace Plugin {
         Core::hresult WifiMac(WiFiMac& wiFiMa) const override;
         Core::hresult EstbIp(StbIp& stbIp) const override;
         Core::hresult SupportedAudioPorts(RPC::IStringIterator*& supportedAudioPorts, bool& success) const override;
-        Core::hresult OsName(string& osName) const override;
-        Core::hresult OsName(const string& osName) override;
-        Core::hresult OsVersion(string& osVersion) const override;
-        Core::hresult OsVersion(const string& osVersion) override;
+        Core::hresult OsName(DeviceOsName& deviceOsName) const override;
+        Core::hresult OsName(const DeviceOsName &deviceOsName) override;
+        Core::hresult OsVersion(DeviceOsVersion& deviceOsVersion) const override;
+        Core::hresult OsVersion(const DeviceOsVersion &deviceOsVersion) override;
 
         // IConfiguration interface
         uint32_t Configure(PluginHost::IShell* service) override;
