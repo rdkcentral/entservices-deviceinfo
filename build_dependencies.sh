@@ -57,7 +57,7 @@ cd Thunder
 git checkout $THUNDER_COMMIT_SHA
 cd ..
 
-git clone --branch develop https://github.com/rdkcentral/entservices-apis.git
+git clone --branch feature/RDKEMW-22986 https://github.com/rdkcentral/entservices-apis.git
 
 # Clone entservices-helpers as a sibling of the workspace so that
 # ${CMAKE_SOURCE_DIR}/../entservices-helpers/helpers resolves correctly in L1Tests.
