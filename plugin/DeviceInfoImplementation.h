@@ -68,9 +68,9 @@ namespace Plugin {
         Core::hresult DeviceId(DeviceIdInfo& deviceIdInfo) const override;
         Core::hresult HardwareId(HardwareIdInfo& hardwareIdInfo) const override;
         Core::hresult OsName(DeviceOsName& deviceOsName) const override;
-        Core::hresult OsName(const DeviceOsName &deviceOsName) override;
+        Core::hresult OsName(const string &osName) override;
         Core::hresult OsVersion(DeviceOsVersion& deviceOsVersion) const override;
-        Core::hresult OsVersion(const DeviceOsVersion &deviceOsVersion) override;
+        Core::hresult OsVersion(const string &osVersion) override;
 
         // IConfiguration interface
         uint32_t Configure(PluginHost::IShell* service) override;

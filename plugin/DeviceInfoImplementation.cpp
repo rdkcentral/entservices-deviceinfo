@@ -577,15 +577,15 @@ namespace Plugin {
     Core::hresult DeviceInfoImplementation::OsName(DeviceOsName& deviceOsName) const
     {
         std::lock_guard<std::mutex> lock(_osPropertiesMutex);
-        deviceOsName.osname.clear();
-        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), deviceOsName.osname);
+        deviceOsName.osName.clear();
+        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), deviceOsName.osName);
         if (getFileRegexResult != Core::ERROR_NONE) {
             LOGINFO("OsName: os_name key not found during read (file missing or key absent).");
         }
         return Core::ERROR_NONE;
     }
 
-    Core::hresult DeviceInfoImplementation::OsName(const DeviceOsName &deviceOsName)
+    Core::hresult DeviceInfoImplementation::OsName(const string &osName)
     {
         std::lock_guard<std::mutex> lock(_osPropertiesMutex);
         string curVersion;
@@ -593,21 +593,21 @@ namespace Plugin {
         if (getFileRegexResult != Core::ERROR_NONE) {
             LOGINFO("OsName: os_version key not found during write (file missing or key absent).");
         }
-        return WriteOsDetails(deviceOsName.osname, curVersion);
+        return WriteOsDetails(osName, curVersion);
     }
 
     Core::hresult DeviceInfoImplementation::OsVersion(DeviceOsVersion& deviceOsVersion) const
     {
         std::lock_guard<std::mutex> lock(_osPropertiesMutex);
-        deviceOsVersion.osversion.clear();
-        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), deviceOsVersion.osversion);
+        deviceOsVersion.osVersion.clear();
+        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), deviceOsVersion.osVersion);
         if (getFileRegexResult != Core::ERROR_NONE) {
             LOGINFO("OsVersion: os_version key not found during read (file missing or key absent).");
         }
         return Core::ERROR_NONE;
     }
 
-    Core::hresult DeviceInfoImplementation::OsVersion(const DeviceOsVersion &deviceOsVersion)
+    Core::hresult DeviceInfoImplementation::OsVersion(const string &osVersion)
     {
         std::lock_guard<std::mutex> lock(_osPropertiesMutex);
         string curName;
@@ -615,7 +615,7 @@ namespace Plugin {
         if (getFileRegexResult != Core::ERROR_NONE) {
             LOGINFO("OsVersion: os_name key not found during write (file missing or key absent).");
         }
-        return WriteOsDetails(curName, deviceOsVersion.osversion);
+        return WriteOsDetails(curName, osVersion);
     }
 }
 }

@@ -1866,65 +1866,65 @@ TEST_F(DeviceInfoTest, HardwareID_Short_DeviceId)
 TEST_F(DeviceInfoTest, OsName_Read_WhenNoFileExists_ReturnsEmpty)
 {
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"osName\":\"\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsName_Write_ThenRead_ReturnsSameValue)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"RDKLinux\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"RDKLinux\"}"));
+    EXPECT_EQ(response, _T("{\"osName\":\"RDKLinux\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsName_WriteMultipleTimes_LastWriteWins)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"FirstName\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"FirstName\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"SecondName\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"SecondName\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"ThirdName\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"ThirdName\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"ThirdName\"}"));
+    EXPECT_EQ(response, _T("{\"osName\":\"ThirdName\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsName_WriteEmptyString_OverwritesPreviousValue)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"RDKLinux\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"osName\":\"\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsName_WriteAndRead_DoesNotCorruptOsVersion)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"5.4.0\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.4.0\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"RDKLinux\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"5.4.0\"}"));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"5.4.0\"}"));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"RDKLinux\"}"));
+    EXPECT_EQ(response, _T("{\"osName\":\"RDKLinux\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsName_WriteLongString_ReadBackCorrectly)
 {
     const string longName(512, 'A');
-    const string writePayload = _T("{\"deviceOsName\":{\"osname\":\"") + longName + _T("\"}}");
+    const string writePayload = _T("{\"osName\":\"") + longName + _T("\"}");
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), writePayload, response));
 
@@ -1935,75 +1935,75 @@ TEST_F(DeviceInfoTest, OsName_WriteLongString_ReadBackCorrectly)
 
 TEST_F(DeviceInfoTest, OsName_WriteSpecialCharacters_ReadBackCorrectly)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"RDK-Linux_v2\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDK-Linux_v2\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"RDK-Linux_v2\"}"));
+    EXPECT_EQ(response, _T("{\"osName\":\"RDK-Linux_v2\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsVersion_Read_WhenNoFileExists_ReturnsEmpty)
 {
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsVersion_Write_ThenRead_ReturnsSameValue)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"5.4.0\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.4.0\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"5.4.0\"}"));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"5.4.0\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsVersion_WriteMultipleTimes_LastWriteWins)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"1.0.0\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"1.0.0\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"2.0.0\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"2.0.0\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"3.0.0\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"3.0.0\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"3.0.0\"}"));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"3.0.0\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsVersion_WriteEmptyString_OverwritesPreviousValue)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"5.4.0\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.4.0\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsVersion_WriteAndRead_DoesNotCorruptOsName)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"RDKLinux\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"5.4.0\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.4.0\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"RDKLinux\"}"));
+    EXPECT_EQ(response, _T("{\"osName\":\"RDKLinux\"}"));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"5.4.0\"}"));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"5.4.0\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsVersion_WriteLongString_ReadBackCorrectly)
 {
     const string longVersion(512, '9');
-    const string writePayload = _T("{\"deviceOsVersion\":{\"osversion\":\"") + longVersion + _T("\"}}");
+    const string writePayload = _T("{\"osVersion\":\"") + longVersion + _T("\"}");
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), writePayload, response));
 
@@ -2014,68 +2014,75 @@ TEST_F(DeviceInfoTest, OsVersion_WriteLongString_ReadBackCorrectly)
 
 TEST_F(DeviceInfoTest, OsVersion_WriteSemanticVersion_ReadBackCorrectly)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"5.15.102-rdk\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.15.102-rdk\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"5.15.102-rdk\"}"));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"5.15.102-rdk\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_DirectImplementation_WriteThenRead_ReturnsSameValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, deviceInfoImplementation->OsName(string("RDKLinux")));
+
+    Exchange::IDeviceInfo::DeviceOsName getOsName;
+    const Plugin::DeviceInfoImplementation* constImpl = &(*deviceInfoImplementation);
+    EXPECT_EQ(Core::ERROR_NONE, constImpl->OsName(getOsName));
+    EXPECT_EQ(getOsName.osName, "RDKLinux");
 }
 
 TEST_F(DeviceInfoTest, OsVersion_DirectImplementation_WriteThenRead_ReturnsSameValue)
 {
-    Exchange::IDeviceInfo::DeviceOsVersion mutableOsVersion;
-    mutableOsVersion.osversion = "5.4.0";
-    const Exchange::IDeviceInfo::DeviceOsVersion setOsVersion = mutableOsVersion;
-    EXPECT_EQ(Core::ERROR_NONE, deviceInfoImplementation->OsVersion(setOsVersion));
+    EXPECT_EQ(Core::ERROR_NONE, deviceInfoImplementation->OsVersion(string("5.4.0")));
 
     Exchange::IDeviceInfo::DeviceOsVersion getOsVersion;
     const Plugin::DeviceInfoImplementation* constImpl = &(*deviceInfoImplementation);
     EXPECT_EQ(Core::ERROR_NONE, constImpl->OsVersion(getOsVersion));
-    EXPECT_EQ(getOsVersion.osversion, "5.4.0");
+    EXPECT_EQ(getOsVersion.osVersion, "5.4.0");
 }
 
 TEST_F(DeviceInfoTest, OsNameAndVersion_InterleavedWriteRead_BothPersistIndependently)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"AlphaOS\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"AlphaOS\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"1.0.0\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"1.0.0\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"BetaOS\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"BetaOS\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"2.0.0\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"2.0.0\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"BetaOS\"}"));
+    EXPECT_EQ(response, _T("{\"osName\":\"BetaOS\"}"));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"2.0.0\"}"));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"2.0.0\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsNameAndVersion_WriteNameOnly_VersionUnaffected)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"4.0.0\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"4.0.0\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"RDKLinux\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osversion\":\"4.0.0\"}"));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"4.0.0\"}"));
 }
 
 TEST_F(DeviceInfoTest, OsNameAndVersion_WriteVersionOnly_NameUnaffected)
 {
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"deviceOsName\":{\"osname\":\"RDKLinux\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
 
     response.clear();
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"deviceOsVersion\":{\"osversion\":\"5.4.0\"}}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.4.0\"}"), response));
 
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"osname\":\"RDKLinux\"}"));
+    EXPECT_EQ(response, _T("{\"osName\":\"RDKLinux\"}"));
 }
