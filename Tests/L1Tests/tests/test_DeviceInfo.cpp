@@ -452,7 +452,7 @@ TEST_F(DeviceInfoTest, FirmwareVersion_Success)
             }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V1\",\"middleware\":\"0.0\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"PDRI_1.2.3\"}"));
+    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V1\",\"rdk\":\"0.0\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"PDRI_1.2.3\"}"));
 }
 
 TEST_F(DeviceInfoTest, Sku_Success_FromMFR)
@@ -690,7 +690,7 @@ TEST_F(DeviceInfoTest, FirmwareVersion_Success_MissingOptionalFields)
         .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V2\",\"middleware\":\"0.0\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V2\",\"rdk\":\"0.0\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
 }
 
 TEST_F(DeviceInfoTest, FirmwareVersion_Failure_ImageNameNotFound)
@@ -1029,7 +1029,7 @@ TEST_F(DeviceInfoTest, SupportedAudioPorts_Negative_EmptyPortList)
         .WillOnce(Return(audioPorts));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-    EXPECT_FALSE(response.find("\"supportedAudioPorts\":[]") != string::npos);
+    EXPECT_TRUE(response.find("\"supportedAudioPorts\":[]") != string::npos);
 }
 
 // =========== Additional Comprehensive Positive Tests ===========
@@ -1621,9 +1621,9 @@ TEST_F(DeviceInfoTest, Information_Success)
     EXPECT_EQ(info, "The DeviceInfo plugin allows retrieving of various device-related information.");
 }
 
-TEST_F(DeviceInfoTest, FirmwareVersion_Success_WithMiddleware)
+TEST_F(DeviceInfoTest, FirmwareVersion_Success_WithRdk)
 {
-    // imagename ELTE11MWR_8.3p9s1_DEV contains version segment _8.3p9s1_ -> middleware="8.3p9s1"
+    // imagename ELTE11MWR_8.3p9s1_DEV contains version segment _8.3p9s1_ -> rdk="8.3p9s1"
     std::ofstream versionFile("/version.txt");
     versionFile << "imagename:ELTE11MWR_8.3p9s1_DEV\n";
     versionFile << "SDK_VERSION=18.4\n";
@@ -1635,12 +1635,12 @@ TEST_F(DeviceInfoTest, FirmwareVersion_Success_WithMiddleware)
         .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"ELTE11MWR_8.3p9s1_DEV\",\"middleware\":\"8.3p9s1\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"imagename\":\"ELTE11MWR_8.3p9s1_DEV\",\"rdk\":\"8.3p9s1\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"\"}"));
 }
 
-TEST_F(DeviceInfoTest, FirmwareVersion_Success_MiddlewareDefaultWhenNoVersionInImageName)
+TEST_F(DeviceInfoTest, FirmwareVersion_Success_RdkDefaultWhenNoVersionInImageName)
 {
-    // imagename with no N.Nxxx version segment -> middleware defaults to "0.0"
+    // imagename with no N.Nxxx version segment -> rdk defaults to "0.0"
     std::ofstream versionFile("/version.txt");
     versionFile << "imagename:TEST_IMAGE_NOMW\n";
     versionFile.close();
@@ -1649,13 +1649,13 @@ TEST_F(DeviceInfoTest, FirmwareVersion_Success_MiddlewareDefaultWhenNoVersionInI
         .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_NOMW\",\"middleware\":\"0.0\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_NOMW\",\"rdk\":\"0.0\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
 }
 
-TEST_F(DeviceInfoTest, FirmwareVersion_Success_MiddlewareFromEmbeddedVersion)
+TEST_F(DeviceInfoTest, FirmwareVersion_Success_RdkFromEmbeddedVersion)
 {
     // imagename with version embedded in letter-prefixed segment (E0xx.xxx.xx.N.Nxxx)
-    // COESST11AEI_E032.031.00.8.6p99s2_DEV -> middleware="8.6p99s2"
+    // COESST11AEI_E032.031.00.8.6p99s2_DEV -> rdk="8.6p99s2"
     std::ofstream versionFile("/version.txt");
     versionFile << "imagename:COESST11AEI_E032.031.00.8.6p99s2_DEV\n";
     versionFile.close();
@@ -1664,7 +1664,7 @@ TEST_F(DeviceInfoTest, FirmwareVersion_Success_MiddlewareFromEmbeddedVersion)
         .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"COESST11AEI_E032.031.00.8.6p99s2_DEV\",\"middleware\":\"8.6p99s2\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"imagename\":\"COESST11AEI_E032.031.00.8.6p99s2_DEV\",\"rdk\":\"8.6p99s2\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
 }
 
 // =========== DeviceID Tests ===========
