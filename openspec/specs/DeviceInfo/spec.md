@@ -25,34 +25,34 @@ Auto-generated JSON-RPC bridge wrappers (`JDeviceInfo`, `JDeviceAudioCapabilitie
 - The plugin SHALL expose all device identity, firmware, network, and system properties as read-only JSON-RPC properties under the `DeviceInfo.1` callsign.
 - All properties SHALL return `Core::ERROR_NONE` on success and `Core::ERROR_GENERAL` on failure, unless otherwise specified.
 - The plugin SHALL run in-process (mode `Off`) inside the WPEFramework daemon.
-- The `firmwareversion` property SHALL always populate `imagename` from `/version.txt`; `middleware` is optional and defaults to `"0.0"` if no version segment is found in `imagename`; all other optional fields default to `""` if not found.
+- The `firmwareversion` property SHALL always populate `imagename` from `/version.txt`; `rdk` is optional and defaults to `"0.0"` if no version segment is found in `imagename`; all other optional fields default to `""` if not found.
 - The `releaseversion` property SHALL always succeed, returning `"99.99.0.0"` as a default when the version cannot be parsed.
 
-### Requirement: firmwareversion middleware field
-The `firmwareversion` property SHALL include a `middleware` field in its response.
-The `middleware` value SHALL be extracted from the `imagename` field (read from `/version.txt`) using a regex that matches a version segment of the form `N.Nxxx` (two numeric parts plus an alphanumeric suffix with no further dots) delimited by underscores or end of string.
-If no such segment is found in `imagename`, the `middleware` field SHALL default to `"0.0"`.
-The `middleware` field SHALL always be present in the response — it is never absent.
+### Requirement: firmwareversion rdk field
+The `firmwareversion` property SHALL include a `rdk` field in its response.
+The `rdk` value SHALL be extracted from the `imagename` field (read from `/version.txt`) using a regex that matches a version segment of the form `N.Nxxx` (two numeric parts plus an alphanumeric suffix with no further dots) delimited by underscores or end of string.
+If no such segment is found in `imagename`, the `rdk` field SHALL default to `"0.0"`.
+The `rdk` field SHALL always be present in the response — it is never absent.
 
 #### Scenario: imagename contains a direct version segment
 - **WHEN** `imagename` is `ELTE11MWR_8.6p1s2_PROD`
-- **THEN** `middleware` is `"8.6p1s2"`
+- **THEN** `rdk` is `"8.6p1s2"`
 
 #### Scenario: imagename contains a version embedded in a letter-prefixed segment
 - **WHEN** `imagename` is `COESST11AEI_E032.031.00.8.6p99s2_DEV`
-- **THEN** `middleware` is `"8.6p99s2"`
+- **THEN** `rdk` is `"8.6p99s2"`
 
-#### Scenario: imagename contains a multi-dot numeric version (not a middleware version)
+#### Scenario: imagename contains a multi-dot numeric version (not a rdk version)
 - **WHEN** `imagename` is `SKTL11MEIIT_DEV_rel-15567_20260805034710_8.5.3.7B1`
-- **THEN** `middleware` is `"0.0"`
+- **THEN** `rdk` is `"0.0"`
 
 #### Scenario: imagename has no version segment
 - **WHEN** `imagename` is `ELTE11MWR_DEV_develop_20260806042826_DPRCTN`
-- **THEN** `middleware` is `"0.0"`
+- **THEN** `rdk` is `"0.0"`
 
-#### Scenario: firmwareversion response always includes middleware field
+#### Scenario: firmwareversion response always includes rdk field
 - **WHEN** `firmwareversion` is called and `imagename` is successfully read
-- **THEN** the response SHALL contain a `middleware` key regardless of whether a version was found
+- **THEN** the response SHALL contain a `rdk` key regardless of whether a version was found
 - The `brandname` property SHALL pre-set `brand` to `"Unknown"` before source lookup; this value is preserved in the output struct even on `ERROR_GENERAL`.
 - The `addresses` property SHALL return the last IPv4 address per interface (by design).
 - All MAC address and IP properties (`ethmac`, `estbmac`, `wifimac`, `estbip`) SHALL strip a trailing newline from the script output.
@@ -193,13 +193,13 @@ All properties are **read-only**. Return `Core::ERROR_NONE` on success, `Core::E
 - **Data source**: `/etc/device.properties` — `CHIPSET_NAME`
 
 #### `firmwareversion`
-- **Response**: `{ "imagename", "middleware", "sdk", "mediarite", "yocto", "pdri" }`
+- **Response**: `{ "imagename", "rdk", "sdk", "mediarite", "yocto", "pdri" }`
 - **Primary field**: `imagename` from `/version.txt`; failure returns `ERROR_GENERAL`
 - **Optional fields**:
 
   | Field | Source |
   |-------|--------|
-  | `middleware` | extracted from `imagename` via regex; defaults to `"0.0"` if no version segment found |
+  | `rdk` | extracted from `imagename` via regex; defaults to `"0.0"` if no version segment found |
   | `sdk` | `/version.txt` — `SDK_VERSION` (defaults to `""`) |
   | `mediarite` | `/version.txt` — `MEDIARITE` (defaults to `""`) |
   | `yocto` | `/version.txt` — `YOCTO_VERSION` (defaults to `""`) |
@@ -230,7 +230,7 @@ curl -X POST http://localhost:9998/jsonrpc \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"DeviceInfo.1.firmwareversion"}'
 # Example response:
-# {"imagename":"ELTE11MWR_8.6p1s2_PROD","middleware":"8.6p1s2","sdk":"17.3","mediarite":"8.3.53","yocto":"dunfell","pdri":""}
+# {"imagename":"ELTE11MWR_8.6p1s2_PROD","rdk":"8.6p1s2","sdk":"17.3","mediarite":"8.3.53","yocto":"dunfell","pdri":""}
 ```
 
 Query `systeminfo` via JSON-RPC:
@@ -355,7 +355,7 @@ No automated benchmark tests are currently defined. The goal is that no single p
 
 | Area | Tests |
 |------|-------|
-| `firmwareversion` middleware extraction | L1: 3 tests (`WithMiddleware`, `DefaultWhenNoVersion`, `EmbeddedVersion`) |
+| `firmwareversion` rdk extraction | L1: 3 tests (`WithRdk`, `DefaultWhenNoVersion`, `EmbeddedVersion`) |
 | `firmwareversion` optional fields | L1: `FirmwareVersion_Success`, `FirmwareVersion_Success_MissingOptionalFields` |
 | All JSON-RPC properties | L1: `test_DeviceInfoJsonRpc.cpp` — `handler.Exists()` and `handler.Invoke()` for each |
 | COMRPC `FirmwareVersion` | L2: `DeviceInfo_COMRPC_FirmwareVersion*` |
@@ -427,6 +427,6 @@ _No open queries._
 ## Change History
 
 - 2026-08-06 - openspec-templater - Restructured to match spec template.
-- 2026-08-06 - add-middleware-to-firmwareversion - Add middleware field to firmwareversion extracted from imagename
+- 2026-08-06 - add-rdk-to-firmwareversion - Add rdk field to firmwareversion extracted from imagename
 
 
