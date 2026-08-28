@@ -27,6 +27,7 @@
 
 #include <com/com.h>
 #include <core/core.h>
+#include <mutex>
 
 namespace WPEFramework {
 namespace Plugin {
@@ -66,6 +67,10 @@ namespace Plugin {
         Core::hresult SupportedAudioPorts(RPC::IStringIterator*& supportedAudioPorts, bool& success) const override;
         Core::hresult DeviceId(DeviceIdInfo& deviceIdInfo) const override;
         Core::hresult HardwareId(HardwareIdInfo& hardwareIdInfo) const override;
+        Core::hresult OsName(DeviceOsName& deviceOsName) const override;
+        Core::hresult OsName(const string &osName) override;
+        Core::hresult OsVersion(DeviceOsVersion& deviceOsVersion) const override;
+        Core::hresult OsVersion(const string &osVersion) override;
 
         // IConfiguration interface
         uint32_t Configure(PluginHost::IShell* service) override;
@@ -74,6 +79,7 @@ namespace Plugin {
         PluginHost::IShell* _service;
         mutable string _cachedDeviceID;
         mutable bool _deviceIDCached { false };
+        mutable std::mutex _osPropertiesMutex;
     };
 }
 }
