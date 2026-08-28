@@ -52,7 +52,7 @@ namespace Plugin {
 
     uint32_t DeviceVideoCapabilities::Configure(PluginHost::IShell* service)
     {
-        DSHelper::Open(service);
+        DSHelper::Open(service, "DeviceVideoCaps");
         return Core::ERROR_NONE;
     }
 

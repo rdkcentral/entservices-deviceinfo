@@ -50,7 +50,7 @@ namespace Plugin {
 
     uint32_t DeviceAudioCapabilities::Configure(PluginHost::IShell* service)
     {
-        DSHelper::Open(service);
+        DSHelper::Open(service, "DeviceAudioCaps");
         return Core::ERROR_NONE;
     }
 

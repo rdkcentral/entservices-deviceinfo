@@ -120,7 +120,7 @@ namespace Plugin {
 
         // Open a single COM-RPC link to DeviceSettings (root IDeviceSettings).
         // Sub-interfaces are acquired on demand via AcquireSubInterface<T>().
-        DSHelper::Open(service);
+        DSHelper::Open(service, "DeviceInfoImpl");
         return Core::ERROR_NONE;
     }
 
