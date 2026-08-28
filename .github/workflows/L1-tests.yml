@@ -13,7 +13,7 @@ env:
   REPO_NAME: "deviceinfo"
   THUNDER_TOOLS_COMMIT_SHA: "d5dd83c7c19c49c7f25c558c126500bd2d64f7a4"
   THUNDER_COMMIT_SHA: "2c0fcc5529e7da734be558ca6efa05d934dcce31"
-  INTERFACES_REF: "eefec47e6fac61f0d5d0ebf4ec463972e8fcdc12"
+  INTERFACES_REF: "develop"
   AUTOMATICS_UNAME: ${{ secrets.AUTOMATICS_UNAME}}
   AUTOMATICS_PASSCODE: ${{ secrets. AUTOMATICS_PASSCODE}}
 
@@ -62,7 +62,7 @@ jobs:
             !install/usr/lib/pkgconfig/gtest.pc
             !install/usr/lib/pkgconfig/gtest_main.pc
             !install/usr/lib/wpeframework/plugins
-          key: ${{ runner.os }}-${{ env.REPO_NAME }}-${{ env.THUNDER_COMMIT_SHA }}-${{ env.INTERFACES_REF }}-5
+          key: ${{ runner.os }}-${{ env.REPO_NAME }}-${{ env.THUNDER_COMMIT_SHA }}-${{ env.INTERFACES_REF }}-4
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -183,10 +183,8 @@ jobs:
         with:
           repository: rdkcentral/entservices-apis
           path: entservices-apis
-          ref: feature/RDKEMW-22912
-
-      - name: Remove DTV json
-        run: rm -rf $GITHUB_WORKSPACE/entservices-apis/jsonrpc/DTV.json
+          ref: ${{env.INTERFACES_REF}}
+          run: rm -rf $GITHUB_WORKSPACE/entservices-apis/jsonrpc/DTV.json
 
       - name: Apply patches entservices-apis
         run: |
