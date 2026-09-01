@@ -80,7 +80,7 @@ namespace Plugin {
             if (handle == INVALID_DS_HANDLE) {
                 list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::AUDIOCAPABILITY_NONE);
             } else {
-                auto* audio = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsAudio>();
+                auto* audio = AcquireSubInterface<Exchange::IDeviceSettingsAudio>();
                 if (!audio) {
                     LOGERR("AudioCapabilities: IDeviceSettingsAudio interface not available");
                     return Core::ERROR_UNAVAILABLE;
@@ -140,7 +140,7 @@ namespace Plugin {
             if (handle == INVALID_DS_HANDLE) {
                 list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::MS12CAPABILITY_NONE);
             } else {
-                auto* audio = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsAudio>();
+                auto* audio = AcquireSubInterface<Exchange::IDeviceSettingsAudio>();
                 if (!audio) {
                     LOGERR("MS12Capabilities: IDeviceSettingsAudio interface not available");
                     return Core::ERROR_UNAVAILABLE;
@@ -207,7 +207,7 @@ namespace Plugin {
             if (handle == INVALID_DS_HANDLE) {
                 result = Core::ERROR_NONE; // Port handle not available — return empty list
             } else {
-                auto* audio = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsAudio>();
+                auto* audio = AcquireSubInterface<Exchange::IDeviceSettingsAudio>();
                 if (!audio) {
                     LOGERR("SupportedMS12AudioProfiles: IDeviceSettingsAudio interface not available");
                     return Core::ERROR_UNAVAILABLE;

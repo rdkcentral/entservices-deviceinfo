@@ -90,7 +90,7 @@ namespace Plugin {
         // COM-RPC path: use IDeviceSettingsHost::GetEDID (maps device::Host::getHostEDID).
         // Standard EDID is 128 bytes (base) or 256 bytes (with 1 extension block).
         // Allocate 256 bytes; trailing zeros are trimmed before base64 encoding.
-        auto* host = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsHost>();
+        auto* host = AcquireSubInterface<Exchange::IDeviceSettingsHost>();
         if (!host) {
             LOGERR("HostEDID: DeviceSettings host interface not available");
             return Core::ERROR_UNAVAILABLE;
@@ -186,7 +186,7 @@ namespace Plugin {
             LOGERR("SupportedHdcp: video port handle not available for '%s'", resolvedEntry.name.c_str());
             return Core::ERROR_UNAVAILABLE;
         }
-        auto* vp = AcquireSubInterfaceMutable<Exchange::IDeviceSettingsVideoPort>();
+        auto* vp = AcquireSubInterface<Exchange::IDeviceSettingsVideoPort>();
         if (!vp) {
             LOGERR("SupportedHdcp: IDeviceSettingsVideoPort interface not available");
             return Core::ERROR_UNAVAILABLE;
