@@ -83,12 +83,6 @@ namespace Plugin {
         mutable string _cachedDeviceID;
         mutable bool _deviceIDCached { false };
 
-    private:
-        template<typename T>
-        T* AcquireSubInterfaceMutable() const {
-            return const_cast<DeviceInfoImplementation*>(this)->AcquireSubInterface<T>();
-        }
-
     protected:
         // DSHelper lifecycle callbacks.
         void OnDeviceSettingsActivated() override;

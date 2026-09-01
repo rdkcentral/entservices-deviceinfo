@@ -56,12 +56,6 @@ namespace Plugin {
         Core::hresult SupportedResolutions(const string& videoDisplay, RPC::IStringIterator*& supportedResolutions, bool& success) const override;
         Core::hresult SupportedHdcp(const string& videoDisplay, SupportedHDCPVer& supportedHDCPVer) const override;
 
-    private:
-        template<typename T>
-        T* AcquireSubInterfaceMutable() const {
-            return const_cast<DeviceVideoCapabilities*>(this)->AcquireSubInterface<T>();
-        }
-
     protected:
         void OnDeviceSettingsActivated() override;
         void OnDeviceSettingsDeactivated() override;

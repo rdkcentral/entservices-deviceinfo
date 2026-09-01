@@ -54,12 +54,6 @@ namespace Plugin {
         Core::hresult MS12Capabilities(const string& audioPort, Exchange::IDeviceAudioCapabilities::IMS12CapabilityIterator*& ms12Capabilities, bool& success) const override;
         Core::hresult SupportedMS12AudioProfiles(const string& audioPort, RPC::IStringIterator*& supportedMS12AudioProfiles, bool& success) const override;
 
-    private:
-        template<typename T>
-        T* AcquireSubInterfaceMutable() const {
-            return const_cast<DeviceAudioCapabilities*>(this)->AcquireSubInterface<T>();
-        }
-
     protected:
         void OnDeviceSettingsActivated() override;
         void OnDeviceSettingsDeactivated() override;
