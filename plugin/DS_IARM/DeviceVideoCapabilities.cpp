@@ -29,6 +29,7 @@
 namespace WPEFramework {
 namespace Plugin {
 
+
     SERVICE_REGISTRATION(DeviceVideoCapabilities, 1, 0);
 
     DeviceVideoCapabilities::DeviceVideoCapabilities()
@@ -44,6 +45,11 @@ namespace Plugin {
         } catch (...) {
         }
     }
+
+    DeviceVideoCapabilities::~DeviceVideoCapabilities()
+    {
+    }
+
 
     Core::hresult DeviceVideoCapabilities::SupportedVideoDisplays(RPC::IStringIterator*& supportedVideoDisplays, bool& success) const
     {

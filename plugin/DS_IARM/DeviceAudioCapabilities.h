@@ -19,28 +19,34 @@
 
 #pragma once
 
-#include "Module.h"
+#include "../Module.h"
 #include <interfaces/IDeviceInfo.h>
+
 
 namespace WPEFramework {
 namespace Plugin {
-    class DeviceAudioCapabilities : public Exchange::IDeviceAudioCapabilities {
+    class DeviceAudioCapabilities
+        : public Exchange::IDeviceAudioCapabilities
+    {
     private:
         DeviceAudioCapabilities(const DeviceAudioCapabilities&) = delete;
         DeviceAudioCapabilities& operator=(const DeviceAudioCapabilities&) = delete;
 
     public:
         DeviceAudioCapabilities();
+        ~DeviceAudioCapabilities() override;
 
         BEGIN_INTERFACE_MAP(DeviceAudioCapabilities)
         INTERFACE_ENTRY(Exchange::IDeviceAudioCapabilities)
         END_INTERFACE_MAP
+
 
     private:
         // IDeviceAudioCapabilities interface
         Core::hresult AudioCapabilities(const string& audioPort, Exchange::IDeviceAudioCapabilities::IAudioCapabilityIterator*& audioCapabilities, bool& success) const override;
         Core::hresult MS12Capabilities(const string& audioPort, Exchange::IDeviceAudioCapabilities::IMS12CapabilityIterator*& ms12Capabilities, bool& success) const override;
         Core::hresult SupportedMS12AudioProfiles(const string& audioPort, RPC::IStringIterator*& supportedMS12AudioProfiles, bool& success) const override;
+
     };
 }
 }

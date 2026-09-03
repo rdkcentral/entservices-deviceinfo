@@ -19,22 +19,34 @@
 
 #pragma once
 
-#include "Module.h"
+#include "../Module.h"
 #include <interfaces/IDeviceInfo.h>
+
+#include <interfaces/IConfiguration.h>
+#include "DeviceSettingsInterface.h"
 
 namespace WPEFramework {
 namespace Plugin {
-    class DeviceVideoCapabilities : public Exchange::IDeviceVideoCapabilities {
+    class DeviceVideoCapabilities
+        : public Exchange::IDeviceVideoCapabilities
+        , public Exchange::IConfiguration
+        , public DSHelper
+    {
     private:
         DeviceVideoCapabilities(const DeviceVideoCapabilities&) = delete;
         DeviceVideoCapabilities& operator=(const DeviceVideoCapabilities&) = delete;
 
     public:
         DeviceVideoCapabilities();
+        ~DeviceVideoCapabilities() override;
 
         BEGIN_INTERFACE_MAP(DeviceVideoCapabilities)
         INTERFACE_ENTRY(Exchange::IDeviceVideoCapabilities)
+        INTERFACE_ENTRY(Exchange::IConfiguration)
         END_INTERFACE_MAP
+
+        // IConfiguration: called by DeviceInfo proxy after Root<>() to pass IShell.
+        uint32_t Configure(PluginHost::IShell* service) override;
 
     private:
         // IDeviceVideoCapabilities interface
@@ -43,6 +55,10 @@ namespace Plugin {
         Core::hresult DefaultResolution(const string& videoDisplay, DefaultResln& defaultResln) const override;
         Core::hresult SupportedResolutions(const string& videoDisplay, RPC::IStringIterator*& supportedResolutions, bool& success) const override;
         Core::hresult SupportedHdcp(const string& videoDisplay, SupportedHDCPVer& supportedHDCPVer) const override;
+
+    protected:
+        void OnDeviceSettingsActivated() override;
+        void OnDeviceSettingsDeactivated() override;
     };
 }
 }
