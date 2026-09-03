@@ -29,6 +29,12 @@
 
 #include <fstream>
 #include <regex>
+#include <cstdio>
+#include <algorithm>
+#include <cctype>
+
+#define OS_DETAILS_FILE "/opt/persistent/osdetails.info"
+#define OS_DETAILS_TMP_FILE "/opt/persistent/osdetails.info.tmp"
 
 namespace WPEFramework {
 namespace Plugin {
@@ -89,7 +95,26 @@ namespace Plugin {
 
             return result;
         }
-        
+
+        uint32_t WriteOsDetails(const string& osName, const string& osVersion)
+        {
+
+            std::ofstream tmp(OS_DETAILS_TMP_FILE);
+            if (!tmp.is_open()) {
+                LOGERR("Failed to open osdetails tmp file for writing");
+                return Core::ERROR_GENERAL;
+            }
+            tmp << "os_name=" << osName << '\n'
+                << "os_version=" << osVersion << '\n';
+            tmp.close();
+            if (std::rename(OS_DETAILS_TMP_FILE, OS_DETAILS_FILE) != 0) {
+                std::remove(OS_DETAILS_TMP_FILE);
+                LOGERR("Failed to atomically write osdetails.info");
+                return Core::ERROR_GENERAL;
+            }
+            return Core::ERROR_NONE;
+        }
+
     }
 
     SERVICE_REGISTRATION(DeviceInfoImplementation, 1, 0);
@@ -279,6 +304,20 @@ namespace Plugin {
         
         if (result == Core::ERROR_NONE )
         {
+            // Extract rdk version from imagename, e.g.:
+            // ELTE11MWR_8.3p9s1_DEV              -> 8.3p9s1
+            // COESST11AEI_E032.031.00.8.6p99s2_DEV -> 8.6p99s2
+            // SKTL11MEIIT_DEV_rel-15567_20260805034710_8.5.3.7B1 -> 0.0
+            {
+                std::smatch mwMatch;
+                if (std::regex_search(firmwareVersionInfo.imagename, mwMatch,
+                        std::regex(R"(_(?:[A-Za-z][^_]*?)?(\d+\.\d+[^.\s_]+)(?:_|$))"))) {
+                    firmwareVersionInfo.rdk = mwMatch[1];
+                } else {
+                    firmwareVersionInfo.rdk = "0.0";
+                }
+            }
+
             if (GetFileRegex(_T("/version.txt"), std::regex("^SDK_VERSION=([^\\n]+)$"), firmwareVersionInfo.sdk) != Core::ERROR_NONE)
             {
                 firmwareVersionInfo.sdk = "";
@@ -493,6 +532,97 @@ namespace Plugin {
         }
 
         return result;
+    }
+
+    Core::hresult DeviceInfoImplementation::DeviceId(DeviceIdInfo& deviceIdInfo) const
+    {
+        if (_deviceIDCached) {
+            deviceIdInfo.deviceId = _cachedDeviceID;
+            return Core::ERROR_NONE;
+        }
+
+        DeviceSerialNo deviceSerialNo;
+        Core::hresult result = SerialNumber(deviceSerialNo);
+        if (result == Core::ERROR_NONE) {
+            const string& serialNumber = deviceSerialNo.serialnumber;
+            bool isNumericOnly = !serialNumber.empty() &&
+                std::all_of(serialNumber.begin(), serialNumber.end(),
+                    [](unsigned char c) { return std::isdigit(c); });
+
+            // if the Device Serial Number is alphanumeric, then we will return the serial number as deviceID.
+            // else we will get the deviceID from MfgSerialNumber.
+            if (!isNumericOnly) {
+                deviceIdInfo.deviceId = serialNumber;
+            } else {
+                string mfgHwid;
+                if (GetMFRData(mfrSERIALIZED_TYPE_HWID, mfgHwid) == Core::ERROR_NONE && !mfgHwid.empty()) {
+                    deviceIdInfo.deviceId = mfgHwid + "000" + serialNumber.substr(5,7);
+                } else {
+                    if (GetMFRData(mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER, deviceIdInfo.deviceId) != Core::ERROR_NONE) {
+                        deviceIdInfo.deviceId = serialNumber;
+                    }
+                }
+            }
+
+            _cachedDeviceID = deviceIdInfo.deviceId;
+            _deviceIDCached = true;
+        }
+
+        return result;
+    }
+
+    Core::hresult DeviceInfoImplementation::HardwareId(HardwareIdInfo& hardwareIdInfo) const
+    {
+        DeviceIdInfo deviceIdInfo;
+        Core::hresult result = DeviceId(deviceIdInfo);
+        if (result == Core::ERROR_NONE) {
+            hardwareIdInfo.hardwareId = deviceIdInfo.deviceId.substr(0, 6);
+        }
+        return result;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsName(DeviceOsName& deviceOsName) const
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        deviceOsName.osName.clear();
+        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), deviceOsName.osName);
+        if (getFileRegexResult != Core::ERROR_NONE) {
+            LOGINFO("OsName: os_name key not found during read (file missing or key absent).");
+        }
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsName(const string &osName)
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        string curVersion;
+        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), curVersion);
+        if (getFileRegexResult != Core::ERROR_NONE) {
+            LOGINFO("OsName: os_version key not found during write (file missing or key absent).");
+        }
+        return WriteOsDetails(osName, curVersion);
+    }
+
+    Core::hresult DeviceInfoImplementation::OsVersion(DeviceOsVersion& deviceOsVersion) const
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        deviceOsVersion.osVersion.clear();
+        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_version=([^\n]*)$"), deviceOsVersion.osVersion);
+        if (getFileRegexResult != Core::ERROR_NONE) {
+            LOGINFO("OsVersion: os_version key not found during read (file missing or key absent).");
+        }
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult DeviceInfoImplementation::OsVersion(const string &osVersion)
+    {
+        std::lock_guard<std::mutex> lock(_osPropertiesMutex);
+        string curName;
+        uint32_t getFileRegexResult = GetFileRegex(OS_DETAILS_FILE, std::regex("^os_name=([^\n]*)$"), curName);
+        if (getFileRegexResult != Core::ERROR_NONE) {
+            LOGINFO("OsVersion: os_name key not found during write (file missing or key absent).");
+        }
+        return WriteOsDetails(curName, osVersion);
     }
 }
 }
