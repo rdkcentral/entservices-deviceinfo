@@ -89,6 +89,9 @@ protected:
         , handler(*plugin)
         , INIT_CONX(1, 0)
     {
+        if (0 != system("mkdir -p /opt/persistent")) { /* do nothing */ }
+        std::remove("/opt/persistent/osdetails.info");
+
         p_iarmBusImplMock = new NiceMock<IarmBusImplMock>;
         IarmBus::setImpl(p_iarmBusImplMock);
 
@@ -452,7 +455,7 @@ TEST_F(DeviceInfoTest, FirmwareVersion_Success)
             }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V1\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"PDRI_1.2.3\"}"));
+    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V1\",\"rdk\":\"0.0\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"PDRI_1.2.3\"}"));
 }
 
 TEST_F(DeviceInfoTest, Sku_Success_FromMFR)
@@ -690,7 +693,7 @@ TEST_F(DeviceInfoTest, FirmwareVersion_Success_MissingOptionalFields)
         .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V2\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
+    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_V2\",\"rdk\":\"0.0\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
 }
 
 TEST_F(DeviceInfoTest, FirmwareVersion_Failure_ImageNameNotFound)
@@ -1029,7 +1032,7 @@ TEST_F(DeviceInfoTest, SupportedAudioPorts_Negative_EmptyPortList)
         .WillOnce(Return(audioPorts));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-    EXPECT_FALSE(response.find("\"supportedAudioPorts\":[]") != string::npos);
+    EXPECT_TRUE(response.find("\"supportedAudioPorts\":[]") != string::npos);
 }
 
 // =========== Additional Comprehensive Positive Tests ===========
@@ -1614,9 +1617,472 @@ TEST_F(DeviceInfoTest, EstbIp_Success_NewlineStripped)
 
 TEST_F(DeviceInfoTest, Information_Success)
 {
-    // Test that Information() returns the correct description string
     string info = plugin->Information();
 
     EXPECT_FALSE(info.empty());
     EXPECT_EQ(info, "The DeviceInfo plugin allows retrieving of various device-related information.");
+}
+
+TEST_F(DeviceInfoTest, FirmwareVersion_Success_WithRdk)
+{
+    // imagename ELTE11MWR_8.3p9s1_DEV contains version segment _8.3p9s1_ -> rdk="8.3p9s1"
+    std::ofstream versionFile("/version.txt");
+    versionFile << "imagename:ELTE11MWR_8.3p9s1_DEV\n";
+    versionFile << "SDK_VERSION=18.4\n";
+    versionFile << "MEDIARITE=9.0.1\n";
+    versionFile << "YOCTO_VERSION=dunfell\n";
+    versionFile.close();
+
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"imagename\":\"ELTE11MWR_8.3p9s1_DEV\",\"rdk\":\"8.3p9s1\",\"sdk\":\"18.4\",\"mediarite\":\"9.0.1\",\"yocto\":\"dunfell\",\"pdri\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, FirmwareVersion_Success_RdkDefaultWhenNoVersionInImageName)
+{
+    // imagename with no N.Nxxx version segment -> rdk defaults to "0.0"
+    std::ofstream versionFile("/version.txt");
+    versionFile << "imagename:TEST_IMAGE_NOMW\n";
+    versionFile.close();
+
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"imagename\":\"TEST_IMAGE_NOMW\",\"rdk\":\"0.0\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, FirmwareVersion_Success_RdkFromEmbeddedVersion)
+{
+    // imagename with version embedded in letter-prefixed segment (E0xx.xxx.xx.N.Nxxx)
+    // COESST11AEI_E032.031.00.8.6p99s2_DEV -> rdk="8.6p99s2"
+    std::ofstream versionFile("/version.txt");
+    versionFile << "imagename:COESST11AEI_E032.031.00.8.6p99s2_DEV\n";
+    versionFile.close();
+
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("firmwareversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"imagename\":\"COESST11AEI_E032.031.00.8.6p99s2_DEV\",\"rdk\":\"8.6p99s2\",\"sdk\":\"\",\"mediarite\":\"\",\"yocto\":\"\",\"pdri\":\"\"}"));
+}
+
+// =========== DeviceID Tests ===========
+// Logic:
+//   - If SerialNumber is alphanumeric  -> use SerialNumber directly as deviceID
+//   - If SerialNumber is numeric-only  -> compose deviceId as HWID+"000"+serial.substr(5,7)
+//     e.g. serial="84725041828384", HWID="32E304" -> deviceId="32E3040000418283"
+//   - If HWID unavailable             -> fall back to mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER
+//   - If both HWID and MFG fail       -> use raw serialNumber as deviceId
+//   - If SerialNumber itself fails    -> propagate error
+
+TEST_F(DeviceInfoTest, DeviceID_NumericSerial_ComposesFromHWID)
+{
+    // Serial "84725041828384" is numeric-only -> compose deviceId from HWID + padding + serial suffix
+    // HWID="32E304", serial.substr(5,7)="0418283" -> deviceId="32E3040000418283"
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(::testing::Invoke(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        strncpy(param->buffer, "84725041828384", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    if (param->type == mfrSERIALIZED_TYPE_HWID) {
+                        strncpy(param->buffer, "32E304", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            }));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceId"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"deviceId\":\"32E3040000418283\"}"));
+}
+
+TEST_F(DeviceInfoTest, DeviceID_AlphanumericSerial_UsesSerialNumber)
+{
+    // Serial "EB21163216C000024" is alphanumeric -> return it directly as deviceID
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(::testing::Invoke(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        strncpy(param->buffer, "EB21163216C000024", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            }));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceId"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"deviceId\":\"EB21163216C000024\"}"));
+}
+
+TEST_F(DeviceInfoTest, DeviceID_NumericSerial_AllMfrFails_FallsBackToSerial)
+{
+    // When HWID and MFG_SERIAL both fail, deviceId falls back to the raw serialNumber
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(::testing::Invoke(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        strncpy(param->buffer, "84725041828384", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    // mfrSERIALIZED_TYPE_HWID and mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER both fail
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            }));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("deviceId"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"deviceId\":\"84725041828384\"}"));
+}
+
+TEST_F(DeviceInfoTest, DeviceID_SerialNumberFails_ReturnsError)
+{
+    // SerialNumber() fails entirely -> DeviceID propagates the error
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(Return(IARM_RESULT_INVALID_PARAM));
+
+    EXPECT_CALL(*p_rfcApiImplMock, getRFCParameter(_, _, _))
+        .WillRepeatedly(Return(WDMP_FAILURE));
+
+    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("deviceId"), _T(""), response));
+}
+
+// =========== HardwareId Tests ===========
+
+TEST_F(DeviceInfoTest, HardwareID_Returns_First6_Alphanumeric)
+{
+    // deviceId = "EB21163216C000024" -> hardwareId = "EB2116"
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(::testing::Invoke(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        strncpy(param->buffer, "EB21163216C000024", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            }));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareId"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"hardwareId\":\"EB2116\"}"));
+}
+
+TEST_F(DeviceInfoTest, HardwareID_Returns_First6_ComposedFromHWID)
+{
+    // Numeric serial "84725041828384" + HWID "32E304"
+    // deviceId = "32E3040000418283" -> hardwareId = "32E304"
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(::testing::Invoke(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        strncpy(param->buffer, "84725041828384", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    if (param->type == mfrSERIALIZED_TYPE_HWID) {
+                        strncpy(param->buffer, "32E304", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            }));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareId"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"hardwareId\":\"32E304\"}"));
+}
+
+TEST_F(DeviceInfoTest, HardwareID_AllMfrFail_FallsBackToSerialPrefix)
+{
+    // When HWID and MFG_SERIAL both fail, deviceId = serialNumber;
+    // hardwareId = serialNumber.substr(0,6) = "847250"
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(::testing::Invoke(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        strncpy(param->buffer, "84725041828384", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                    // mfrSERIALIZED_TYPE_HWID and mfrSERIALIZED_TYPE_MANUFACTURING_SERIALNUMBER both fail
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            }));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareId"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"hardwareId\":\"847250\"}"));
+}
+
+TEST_F(DeviceInfoTest, HardwareID_Short_DeviceId)
+{
+    // deviceId shorter than 6 chars -> hardwareId equals full deviceId
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_Call(_, _, _, _))
+        .WillRepeatedly(::testing::Invoke(
+            [](const char* ownerName, const char* methodName, void* arg, size_t argLen) {
+                if (strcmp(methodName, IARM_BUS_MFRLIB_API_GetSerializedData) == 0) {
+                    auto* param = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t*>(arg);
+                    if (param->type == mfrSERIALIZED_TYPE_SERIALNUMBER) {
+                        strncpy(param->buffer, "AB12", sizeof(param->buffer) - 1);
+                        param->buffer[sizeof(param->buffer) - 1] = '\0';
+                        param->bufLen = strlen(param->buffer);
+                        return IARM_RESULT_SUCCESS;
+                    }
+                }
+                return IARM_RESULT_INVALID_PARAM;
+            }));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hardwareId"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"hardwareId\":\"AB12\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_Read_WhenNoFileExists_ReturnsEmpty)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_Write_ThenRead_ReturnsSameValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"RDKLinux\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_WriteMultipleTimes_LastWriteWins)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"FirstName\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"SecondName\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"ThirdName\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"ThirdName\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_WriteEmptyString_OverwritesPreviousValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_WriteAndRead_DoesNotCorruptOsVersion)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.4.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"5.4.0\"}"));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"RDKLinux\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_WriteLongString_ReadBackCorrectly)
+{
+    const string longName(512, 'A');
+    const string writePayload = _T("{\"osName\":\"") + longName + _T("\"}");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), writePayload, response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_TRUE(response.find(longName) != string::npos);
+}
+
+TEST_F(DeviceInfoTest, OsName_WriteSpecialCharacters_ReadBackCorrectly)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDK-Linux_v2\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"RDK-Linux_v2\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Read_WhenNoFileExists_ReturnsEmpty)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_Write_ThenRead_ReturnsSameValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.4.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"5.4.0\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_WriteMultipleTimes_LastWriteWins)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"1.0.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"2.0.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"3.0.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"3.0.0\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_WriteEmptyString_OverwritesPreviousValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.4.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_WriteAndRead_DoesNotCorruptOsName)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.4.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"RDKLinux\"}"));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"5.4.0\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsVersion_WriteLongString_ReadBackCorrectly)
+{
+    const string longVersion(512, '9');
+    const string writePayload = _T("{\"osVersion\":\"") + longVersion + _T("\"}");
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), writePayload, response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_TRUE(response.find(longVersion) != string::npos);
+}
+
+TEST_F(DeviceInfoTest, OsVersion_WriteSemanticVersion_ReadBackCorrectly)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.15.102-rdk\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"5.15.102-rdk\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsName_DirectImplementation_WriteThenRead_ReturnsSameValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, deviceInfoImplementation->OsName(string("RDKLinux")));
+
+    Exchange::IDeviceInfo::DeviceOsName getOsName;
+    const Plugin::DeviceInfoImplementation* constImpl = &(*deviceInfoImplementation);
+    EXPECT_EQ(Core::ERROR_NONE, constImpl->OsName(getOsName));
+    EXPECT_EQ(getOsName.osName, "RDKLinux");
+}
+
+TEST_F(DeviceInfoTest, OsVersion_DirectImplementation_WriteThenRead_ReturnsSameValue)
+{
+    EXPECT_EQ(Core::ERROR_NONE, deviceInfoImplementation->OsVersion(string("5.4.0")));
+
+    Exchange::IDeviceInfo::DeviceOsVersion getOsVersion;
+    const Plugin::DeviceInfoImplementation* constImpl = &(*deviceInfoImplementation);
+    EXPECT_EQ(Core::ERROR_NONE, constImpl->OsVersion(getOsVersion));
+    EXPECT_EQ(getOsVersion.osVersion, "5.4.0");
+}
+
+TEST_F(DeviceInfoTest, OsNameAndVersion_InterleavedWriteRead_BothPersistIndependently)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"AlphaOS\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"1.0.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"BetaOS\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"2.0.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"BetaOS\"}"));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"2.0.0\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsNameAndVersion_WriteNameOnly_VersionUnaffected)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"4.0.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osVersion\":\"4.0.0\"}"));
+}
+
+TEST_F(DeviceInfoTest, OsNameAndVersion_WriteVersionOnly_NameUnaffected)
+{
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T("{\"osName\":\"RDKLinux\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osversion"), _T("{\"osVersion\":\"5.4.0\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"osName\":\"RDKLinux\"}"));
 }
