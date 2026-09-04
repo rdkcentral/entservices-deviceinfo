@@ -28,6 +28,7 @@
 namespace WPEFramework {
 namespace Plugin {
 
+
     SERVICE_REGISTRATION(DeviceAudioCapabilities, 1, 0);
 
     DeviceAudioCapabilities::DeviceAudioCapabilities()
@@ -43,6 +44,11 @@ namespace Plugin {
         } catch (...) {
         }
     }
+
+    DeviceAudioCapabilities::~DeviceAudioCapabilities()
+    {
+    }
+
 
     Core::hresult DeviceAudioCapabilities::AudioCapabilities(const string& audioPort, Exchange::IDeviceAudioCapabilities::IAudioCapabilityIterator*& audioCapabilities, bool& success) const
     {

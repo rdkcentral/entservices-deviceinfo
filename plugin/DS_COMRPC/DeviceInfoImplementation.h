@@ -19,7 +19,7 @@
 
 #pragma once
 
-#include "Module.h"
+#include "../Module.h"
 
 #include <interfaces/Ids.h>
 #include <interfaces/IDeviceInfo.h>
@@ -29,9 +29,15 @@
 #include <core/core.h>
 #include <mutex>
 
+#include "DeviceSettingsInterface.h"
+
 namespace WPEFramework {
 namespace Plugin {
-    class DeviceInfoImplementation : public Exchange::IDeviceInfo, public Exchange::IConfiguration {
+    class DeviceInfoImplementation
+        : public Exchange::IDeviceInfo
+        , public Exchange::IConfiguration
+        , public DSHelper
+    {
     public:
         // We do not allow this plugin to be copied !!
         DeviceInfoImplementation();
@@ -76,10 +82,17 @@ namespace Plugin {
         uint32_t Configure(PluginHost::IShell* service) override;
 
     private:
+        // _service must be declared before any #ifdef block so the
+        // constructor initialisation order matches member declaration order.
         PluginHost::IShell* _service;
         mutable string _cachedDeviceID;
         mutable bool _deviceIDCached { false };
         mutable std::mutex _osPropertiesMutex;
+
+    protected:
+        // DSHelper lifecycle callbacks.
+        void OnDeviceSettingsActivated() override;
+        void OnDeviceSettingsDeactivated() override;
     };
 }
 }
