@@ -19,29 +19,39 @@
 
 #include "DeviceAudioCapabilities.h"
 
-#include "exception.hpp"
-#include "host.hpp"
-#include "manager.hpp"
-
-#include "UtilsIarm.h"
+#include "DeviceSettingsInterface.h"
 
 namespace WPEFramework {
 namespace Plugin {
+
+    void DeviceAudioCapabilities::OnDeviceSettingsActivated()
+    {
+        // Config is loaded lazily by DSHelper::_ensureConfigLoaded() on the first
+        // accessor call. No explicit load needed here.
+        LOGINFO("DeviceAudioCapabilities: DeviceSettings activated");
+    }
+
+    void DeviceAudioCapabilities::OnDeviceSettingsDeactivated()
+    {
+        // DSHelper::Operational(false) already clears all config stores and handles.
+        LOGINFO("DeviceAudioCapabilities: DeviceSettings deactivated");
+    }
 
     SERVICE_REGISTRATION(DeviceAudioCapabilities, 1, 0);
 
     DeviceAudioCapabilities::DeviceAudioCapabilities()
     {
-        Utils::IARM::init();
+    }
 
-        try {
-            device::Manager::Initialize();
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-        } catch (...) {
-        }
+    DeviceAudioCapabilities::~DeviceAudioCapabilities()
+    {
+        DSHelper::Close();
+    }
+
+    uint32_t DeviceAudioCapabilities::Configure(PluginHost::IShell* service)
+    {
+        DSHelper::Open(service, "DeviceAudioCaps");
+        return Core::ERROR_NONE;
     }
 
     Core::hresult DeviceAudioCapabilities::AudioCapabilities(const string& audioPort, Exchange::IDeviceAudioCapabilities::IAudioCapabilityIterator*& audioCapabilities, bool& success) const
@@ -50,36 +60,52 @@ namespace Plugin {
 
         std::list<Exchange::IDeviceAudioCapabilities::AudioCapability> list;
 
-        int capabilities = dsAUDIOSUPPORT_NONE;
-
-        try {
-            auto strAudioPort = audioPort.empty() ? device::Host::getInstance().getDefaultAudioPortName() : audioPort;
-            auto& aPort = device::Host::getInstance().getAudioOutputPort(strAudioPort);
-            aPort.getAudioCapabilities(&capabilities);
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (...) {
-            result = Core::ERROR_GENERAL;
+        // Resolve port from cached config via DSHelper — no per-call GetAudioConfig() round-trip
+        std::vector<AudioPortEntry> entries;
+        if (!DSHelper::getAudioPortEntries(entries)) {
+            LOGERR("AudioCapabilities: DeviceSettings config not available");
+            return Core::ERROR_UNAVAILABLE;
         }
-
-        if (!capabilities)
+        const AudioPortEntry* portEntry = nullptr;
+        for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
+            if (audioPort.empty() || entries[i].name == audioPort) {
+                portEntry = &entries[i];
+            }
+        }
+        if (portEntry == nullptr) {
+            // Port not found: report no capabilities rather than an error
             list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::AUDIOCAPABILITY_NONE);
-        if (capabilities & dsAUDIOSUPPORT_ATMOS)
-            list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::ATMOS);
-        if (capabilities & dsAUDIOSUPPORT_DD)
-            list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::DD);
-        if (capabilities & dsAUDIOSUPPORT_DDPLUS)
-            list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::DDPLUS);
-        if (capabilities & dsAUDIOSUPPORT_DAD)
-            list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::DAD);
-        if (capabilities & dsAUDIOSUPPORT_DAPv2)
-            list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::DAPV2);
-        if (capabilities & dsAUDIOSUPPORT_MS12)
-            list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::MS12);
+        } else {
+            int32_t handle = DSHelper::getCachedAudioPortHandle(portEntry->name);
+            if (handle == INVALID_DS_HANDLE) {
+                list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::AUDIOCAPABILITY_NONE);
+            } else {
+                auto* audio = AcquireSubInterface<Exchange::IDeviceSettingsAudio>();
+                if (!audio) {
+                    LOGERR("AudioCapabilities: IDeviceSettingsAudio interface not available");
+                    return Core::ERROR_UNAVAILABLE;
+                }
+                int32_t caps = 0;
+                result = audio->GetAudioCapabilities(handle, caps);
+                if (result == Core::ERROR_NONE) {
+                    if (!caps)
+                        list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::AUDIOCAPABILITY_NONE);
+                    if (caps & Exchange::IDeviceSettingsAudio::AUDIO_CAPS_ATMOS)
+                        list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::ATMOS);
+                    if (caps & Exchange::IDeviceSettingsAudio::AUDIO_CAPS_DOLBY_DIGITAL)
+                        list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::DD);
+                    if (caps & Exchange::IDeviceSettingsAudio::AUDIO_CAPS_DOLBY_DIGITAL_PLUS)
+                        list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::DDPLUS);
+                    if (caps & Exchange::IDeviceSettingsAudio::AUDIO_CAPS_DIGITAL_AUDIO_DELIVERY)
+                        list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::DAD);
+                    if (caps & Exchange::IDeviceSettingsAudio::AUDIO_CAPS_DIGITAL_AUDIO_PROCESS_V2)
+                        list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::DAPV2);
+                    if (caps & Exchange::IDeviceSettingsAudio::AUDIO_CAPS_MS12)
+                        list.emplace_back(Exchange::IDeviceAudioCapabilities::AudioCapability::MS12);
+                }
+                audio->Release();
+            }
+        }
 
         if (result == Core::ERROR_NONE) {
             audioCapabilities = (Core::Service<RPC::IteratorType<Exchange::IDeviceAudioCapabilities::IAudioCapabilityIterator>>::Create<Exchange::IDeviceAudioCapabilities::IAudioCapabilityIterator>(list));
@@ -95,30 +121,45 @@ namespace Plugin {
 
         std::list<Exchange::IDeviceAudioCapabilities::MS12Capability> list;
 
-        int capabilities = dsMS12SUPPORT_NONE;
-
-        try {
-            auto strAudioPort = audioPort.empty() ? device::Host::getInstance().getDefaultAudioPortName() : audioPort;
-            auto& aPort = device::Host::getInstance().getAudioOutputPort(strAudioPort);
-            aPort.getMS12Capabilities(&capabilities);
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (...) {
-            result = Core::ERROR_GENERAL;
+        // Resolve port from cached config via DSHelper — no per-call GetAudioConfig() round-trip
+        std::vector<AudioPortEntry> entries;
+        if (!DSHelper::getAudioPortEntries(entries)) {
+            LOGERR("MS12Capabilities: DeviceSettings config not available");
+            return Core::ERROR_UNAVAILABLE;
         }
-
-        if (!capabilities)
+        const AudioPortEntry* portEntry = nullptr;
+        for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
+            if (audioPort.empty() || entries[i].name == audioPort) {
+                portEntry = &entries[i];
+            }
+        }
+        if (portEntry == nullptr) {
             list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::MS12CAPABILITY_NONE);
-        if (capabilities & dsMS12SUPPORT_DolbyVolume)
-            list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::DOLBYVOLUME);
-        if (capabilities & dsMS12SUPPORT_InteligentEqualizer)
-            list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::INTELIGENTEQUALIZER);
-        if (capabilities & dsMS12SUPPORT_DialogueEnhancer)
-            list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::DIALOGUEENHANCER);
+        } else {
+            int32_t handle = DSHelper::getCachedAudioPortHandle(portEntry->name);
+            if (handle == INVALID_DS_HANDLE) {
+                list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::MS12CAPABILITY_NONE);
+            } else {
+                auto* audio = AcquireSubInterface<Exchange::IDeviceSettingsAudio>();
+                if (!audio) {
+                    LOGERR("MS12Capabilities: IDeviceSettingsAudio interface not available");
+                    return Core::ERROR_UNAVAILABLE;
+                }
+                int32_t caps = 0;
+                result = audio->GetAudioMS12Capabilities(handle, caps);
+                if (result == Core::ERROR_NONE) {
+                    if (!caps)
+                        list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::MS12CAPABILITY_NONE);
+                    if (caps & Exchange::IDeviceSettingsAudio::AUDIO_MS12_CAPABILITIES_DOLBYVOLUME)
+                        list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::DOLBYVOLUME);
+                    if (caps & Exchange::IDeviceSettingsAudio::AUDIO_MS12_CAPABILITIES_INTELLIGENT_EQUALIZER)
+                        list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::INTELIGENTEQUALIZER);
+                    if (caps & Exchange::IDeviceSettingsAudio::AUDIO_MS12_CAPABILITIES_DIALOG_ENHANCER)
+                        list.emplace_back(Exchange::IDeviceAudioCapabilities::MS12Capability::DIALOGUEENHANCER);
+                }
+                audio->Release();
+            }
+        }
 
         if (result == Core::ERROR_NONE) {
             ms12Capabilities = (Core::Service<RPC::IteratorType<Exchange::IDeviceAudioCapabilities::IMS12CapabilityIterator>>::Create<Exchange::IDeviceAudioCapabilities::IMS12CapabilityIterator>(list));
@@ -134,21 +175,54 @@ namespace Plugin {
 
         std::list<string> list;
 
-        try {
-            auto strAudioPort = audioPort.empty() ? device::Host::getInstance().getDefaultAudioPortName() : audioPort;
-            auto& aPort = device::Host::getInstance().getAudioOutputPort(strAudioPort);
-            const auto supportedProfiles = aPort.getMS12AudioProfileList();
-            for (size_t i = 0; i < supportedProfiles.size(); i++) {
-                list.emplace_back(supportedProfiles.at(i));
+        // Resolve port from cached config via DSHelper — no per-call GetAudioConfig() round-trip
+        std::vector<AudioPortEntry> entries;
+        if (!DSHelper::getAudioPortEntries(entries)) {
+            LOGERR("SupportedMS12AudioProfiles: DeviceSettings config not available");
+            return Core::ERROR_UNAVAILABLE;
+        }
+        // When audioPort is empty, resolve the platform default using DSHelper::getDefaultAudioPortName().
+        // This mirrors DS_IARM's device::Host::getInstance().getDefaultAudioPortName() which:
+        //   - Returns "HDMI0"    on STB (HDMI audio output exists → matched first)
+        //   - Returns "SPEAKER0" on TV  (no "HDMI0" port — TVs only have "HDMI_ARC0" — so
+        //                                "SPEAKER0" is matched first)
+        // "HDMI_ARC0".find("HDMI0") == npos because "_" follows "HDMI", not "0".
+        const std::string resolvedPort = audioPort.empty()
+            ? DSHelper::getDefaultAudioPortName()
+            : audioPort;
+        if (audioPort.empty()) {
+            LOGINFO("SupportedMS12AudioProfiles: audioPort empty — resolved default to '%s'",
+                    resolvedPort.c_str());
+        }
+        const AudioPortEntry* portEntry = nullptr;
+        for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
+            if (entries[i].name == resolvedPort) {
+                portEntry = &entries[i];
             }
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (...) {
-            result = Core::ERROR_GENERAL;
+        }
+        if (portEntry == nullptr) {
+            result = Core::ERROR_NONE; // Port not found — return empty list without error
+        } else {
+            int32_t handle = DSHelper::getCachedAudioPortHandle(portEntry->name);
+            if (handle == INVALID_DS_HANDLE) {
+                result = Core::ERROR_NONE; // Port handle not available — return empty list
+            } else {
+                auto* audio = AcquireSubInterface<Exchange::IDeviceSettingsAudio>();
+                if (!audio) {
+                    LOGERR("SupportedMS12AudioProfiles: IDeviceSettingsAudio interface not available");
+                    return Core::ERROR_UNAVAILABLE;
+                }
+                Exchange::IDeviceSettingsAudio::IDeviceSettingsAudioMS12AudioProfileIterator* profileIter = nullptr;
+                result = audio->GetAudioMS12ProfileList(handle, profileIter);
+                if (result == Core::ERROR_NONE && profileIter != nullptr) {
+                    Exchange::IDeviceSettingsAudio::MS12AudioProfile profile;
+                    while (profileIter->Next(profile)) {
+                        list.emplace_back(profile.audioProfile);
+                    }
+                    profileIter->Release();
+                }
+                audio->Release();
+            }
         }
 
         if (result == Core::ERROR_NONE) {
