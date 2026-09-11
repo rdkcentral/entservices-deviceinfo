@@ -19,17 +19,19 @@
 
 #include "DeviceInfoImplementation.h"
 
-#include "mfrMgr.h"
 #include "rfcapi.h"
 #include "secure_wrapper.h"
-#include "exception.hpp"
-#include "host.hpp"
-#include "manager.hpp"
 #include "UtilsIarm.h"
+#include "mfrMgr.h"
+#include <unordered_map>
+
+#include "DeviceSettingsInterface.h"
 
 #include <fstream>
 #include <regex>
 #include <cstdio>
+#include <algorithm>
+#include <cctype>
 
 #define OS_DETAILS_FILE "/opt/persistent/osdetails.info"
 #define OS_DETAILS_TMP_FILE "/opt/persistent/osdetails.info.tmp"
@@ -120,19 +122,13 @@ namespace Plugin {
     DeviceInfoImplementation::DeviceInfoImplementation():_service(nullptr)
     {
         Utils::IARM::init();
-        try {
-            device::Manager::Initialize();
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-        } catch (...) {
-        }
     }
 
     DeviceInfoImplementation::~DeviceInfoImplementation()
     {
         LOGINFO("DeviceInfoImplementation destructor");
+        // Close COM-RPC link BEFORE releasing _service reference.
+        DSHelper::Close();
         if (_service != nullptr)
         {
             _service->Release();
@@ -147,7 +143,23 @@ namespace Plugin {
         _service = service;
         _service->AddRef();
 
+        // Open a single COM-RPC link to DeviceSettings (root IDeviceSettings).
+        // Sub-interfaces are acquired on demand via AcquireSubInterface<T>().
+        DSHelper::Open(service, "DeviceInfoImpl");
         return Core::ERROR_NONE;
+    }
+
+    void DeviceInfoImplementation::OnDeviceSettingsActivated()
+    {
+        // Config is loaded lazily by DSHelper::_ensureConfigLoaded() on the first
+        // accessor call. No explicit load needed here.
+        LOGINFO("DeviceInfoImplementation: DeviceSettings activated");
+    }
+
+    void DeviceInfoImplementation::OnDeviceSettingsDeactivated()
+    {
+        // DSHelper::Operational(false) already clears all config stores and handles.
+        LOGINFO("DeviceInfoImplementation: DeviceSettings deactivated");
     }
 
     Core::hresult DeviceInfoImplementation::SerialNumber(DeviceSerialNo& deviceSerialNo) const
@@ -504,19 +516,14 @@ namespace Plugin {
 
         std::list<string> list;
 
-        try {
-            const auto& aPorts = device::Host::getInstance().getAudioOutputPorts();
-            for (size_t i = 0; i < aPorts.size(); i++) {
-                list.emplace_back(aPorts.at(i).getName());
-            }
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (...) {
-            result = Core::ERROR_GENERAL;
+        // Read from cached audio config via DSHelper — no COM-RPC round-trip needed
+        std::vector<AudioPortEntry> entries;
+        if (!DSHelper::getAudioPortEntries(entries)) {
+            LOGERR("SupportedAudioPorts: DeviceSettings config not available");
+            return Core::ERROR_UNAVAILABLE;
+        }
+        for (size_t i = 0; i < entries.size(); ++i) {
+            list.emplace_back(entries[i].name);
         }
 
         if (result == Core::ERROR_NONE) {

@@ -22,25 +22,41 @@
 #include "Module.h"
 #include <interfaces/IDeviceInfo.h>
 
+#include <interfaces/IConfiguration.h>
+#include "DeviceSettingsInterface.h"
+
 namespace WPEFramework {
 namespace Plugin {
-    class DeviceAudioCapabilities : public Exchange::IDeviceAudioCapabilities {
+    class DeviceAudioCapabilities
+        : public Exchange::IDeviceAudioCapabilities
+        , public Exchange::IConfiguration
+        , public DSHelper
+    {
     private:
         DeviceAudioCapabilities(const DeviceAudioCapabilities&) = delete;
         DeviceAudioCapabilities& operator=(const DeviceAudioCapabilities&) = delete;
 
     public:
         DeviceAudioCapabilities();
+        ~DeviceAudioCapabilities() override;
 
         BEGIN_INTERFACE_MAP(DeviceAudioCapabilities)
         INTERFACE_ENTRY(Exchange::IDeviceAudioCapabilities)
+        INTERFACE_ENTRY(Exchange::IConfiguration)
         END_INTERFACE_MAP
+
+        // IConfiguration: called by DeviceInfo proxy after Root<>() to pass IShell.
+        uint32_t Configure(PluginHost::IShell* service) override;
 
     private:
         // IDeviceAudioCapabilities interface
         Core::hresult AudioCapabilities(const string& audioPort, Exchange::IDeviceAudioCapabilities::IAudioCapabilityIterator*& audioCapabilities, bool& success) const override;
         Core::hresult MS12Capabilities(const string& audioPort, Exchange::IDeviceAudioCapabilities::IMS12CapabilityIterator*& ms12Capabilities, bool& success) const override;
         Core::hresult SupportedMS12AudioProfiles(const string& audioPort, RPC::IStringIterator*& supportedMS12AudioProfiles, bool& success) const override;
+
+    protected:
+        void OnDeviceSettingsActivated() override;
+        void OnDeviceSettingsDeactivated() override;
     };
 }
 }
