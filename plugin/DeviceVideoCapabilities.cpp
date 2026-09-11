@@ -26,7 +26,7 @@
 
 #include "UtilsIarm.h"
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Plugin {
 
     SERVICE_REGISTRATION(DeviceVideoCapabilities, 1, 0);

@@ -25,7 +25,7 @@
 
 #include "UtilsIarm.h"
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Plugin {
 
     SERVICE_REGISTRATION(DeviceAudioCapabilities, 1, 0);

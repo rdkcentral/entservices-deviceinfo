@@ -22,7 +22,7 @@
 #include "Module.h"
 #include <interfaces/IDeviceInfo.h>
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Plugin {
     class DeviceAudioCapabilities : public Exchange::IDeviceAudioCapabilities {
     private:

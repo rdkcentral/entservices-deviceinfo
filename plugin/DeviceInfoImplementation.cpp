@@ -30,7 +30,7 @@
 #include <fstream>
 #include <regex>
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Plugin {
     namespace {
 

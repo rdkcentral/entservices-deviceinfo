@@ -28,7 +28,7 @@
 #include <com/com.h>
 #include <core/core.h>
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Plugin {
     class DeviceInfoImplementation : public Exchange::IDeviceInfo, public Exchange::IConfiguration {
     public:
