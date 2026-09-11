@@ -134,14 +134,14 @@ The plugin exposes a comprehensive JSON-RPC 2.0 API with the following method ca
 - **Valgrind Analysis**: Memory leak and error detection
 
 ### Platform Support
-- Compatible with all WPEFramework R4.x versions
+- Compatible with all Thunder R4.x versions
 - Supports Thunder's out-of-process and in-process execution modes
 - Cross-platform: Linux-based RDK devices (STB, broadband gateways, smart displays)
 
 ## Integration Requirements
 
 ### Prerequisites
-- WPEFramework (Thunder) R4.4.1 or later
+- Thunder R4.4.1 or later
 - RDK Device Settings HAL (dsHAL) available
 - IARM Bus daemon running
 - RFC configuration service (optional, for advanced features)
@@ -152,9 +152,9 @@ The plugin exposes a comprehensive JSON-RPC 2.0 API with the following method ca
 - Runtime configuration through IConfiguration interface
 
 ### Deployment
-- Shared library: `libWPEFrameworkDeviceInfo.so`
-- Installation path: `/usr/lib/wpeframework/plugins/`
-- Configuration: `/etc/WPEFramework/plugins/DeviceInfo.json`
+- Shared library: `libThunderDeviceInfo.so`
+- Installation path: `/usr/lib/thunder/plugins/`
+- Configuration: `/etc/Thunder/plugins/DeviceInfo.json`
 - Automatic activation on Thunder startup (configurable)
 
 ## Future Enhancements

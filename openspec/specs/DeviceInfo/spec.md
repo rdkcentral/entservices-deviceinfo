@@ -2,13 +2,13 @@
 
 ## Overview
 
-The **DeviceInfo** plugin exposes read-only device identity, hardware, firmware, network, and system information to JSON-RPC and COM-RPC clients running on WPEFramework (Thunder). It has no mutable state — all properties are derived at query time from system files, MFR library, RFC parameters, or DS (Device Settings) layer.
+The **DeviceInfo** plugin exposes read-only device identity, hardware, firmware, network, and system information to JSON-RPC and COM-RPC clients running on Thunder. It has no mutable state — all properties are derived at query time from system files, MFR library, RFC parameters, or DS (Device Settings) layer.
 
 ---
 
 ## Description
 
-The DeviceInfo plugin is a WPEFramework (Thunder) plugin registered under the callsign `DeviceInfo` (versioned: `DeviceInfo.1`). It runs **in-process** (mode `"Off"`) inside the WPEFramework daemon — there is no separate process or IPC boundary.
+The DeviceInfo plugin is a  Thunder plugin registered under the callsign `DeviceInfo` (versioned: `DeviceInfo.1`). It runs **in-process** (mode `"Off"`) inside the Thunder daemon — there is no separate process or IPC boundary.
 
 The plugin shell (`DeviceInfo.cpp`) instantiates three implementation objects at startup via `IShell::Root<>()`, which resolves to local (same-process) COM object instantiation:
 
@@ -24,7 +24,7 @@ Auto-generated JSON-RPC bridge wrappers (`JDeviceInfo`, `JDeviceAudioCapabilitie
 
 - The plugin SHALL expose all device identity, firmware, network, and system properties as read-only JSON-RPC properties under the `DeviceInfo.1` callsign.
 - All properties SHALL return `Core::ERROR_NONE` on success and `Core::ERROR_GENERAL` on failure, unless otherwise specified.
-- The plugin SHALL run in-process (mode `Off`) inside the WPEFramework daemon.
+- The plugin SHALL run in-process (mode `Off`) inside the Thunder daemon.
 - The `firmwareversion` property SHALL always populate `imagename` from `/version.txt`; `rdk` is optional and defaults to `"0.0"` if no version segment is found in `imagename`; all other optional fields default to `""` if not found.
 - The `releaseversion` property SHALL always succeed, returning `"99.99.0.0"` as a default when the version cannot be parsed.
 
@@ -63,7 +63,7 @@ The `rdk` field SHALL always be present in the response — it is never absent.
 
 ## Architecture / Design
 
-The DeviceInfo plugin runs **in-process** (mode `"Off"`) inside the WPEFramework daemon. There is no separate process or IPC boundary. The plugin shell (`DeviceInfo.cpp`) instantiates the three implementation objects via `IShell::Root<>()`, which resolves to a local (same-process) COM object instantiation. All JSON-RPC calls are dispatched directly to those COM interface pointers without leaving the process.
+The DeviceInfo plugin runs **in-process** (mode `"Off"`) inside the Thunder daemon. There is no separate process or IPC boundary. The plugin shell (`DeviceInfo.cpp`) instantiates the three implementation objects via `IShell::Root<>()`, which resolves to a local (same-process) COM object instantiation. All JSON-RPC calls are dispatched directly to those COM interface pointers without leaving the process.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -307,7 +307,7 @@ No automated benchmark tests are currently defined. The goal is that no single p
 |--------|------|------------|
 | Shell injection via script arguments | Medium | `v_secure_popen` used instead of `popen`; arguments are hardcoded constants, no user input |
 | Path traversal via file reads | Low | All file paths are hardcoded literals; no user-controlled input reaches file-open calls |
-| Information disclosure | Low | Plugin exposes device identity data — access is restricted to authenticated Thunder clients via WPEFramework's built-in token/credential mechanism |
+| Information disclosure | Low | Plugin exposes device identity data — access is restricted to authenticated Thunder clients via Thunder's built-in token/credential mechanism |
 | IARM bus spoofing | Low | IARM is a local IPC bus; only privileged processes on the device can register as bus members |
 
 ### Security Requirements

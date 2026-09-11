@@ -34,7 +34,7 @@
 #define OS_DETAILS_FILE "/opt/persistent/osdetails.info"
 #define OS_DETAILS_TMP_FILE "/opt/persistent/osdetails.info.tmp"
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Plugin {
     namespace {
 

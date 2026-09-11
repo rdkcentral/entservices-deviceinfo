@@ -36,7 +36,7 @@
 #define DEVICEINFOL2TEST_CALLSIGN _T("L2tests.1")
 
 using ::testing::NiceMock;
-using namespace WPEFramework;
+using namespace Thunder;
 using testing::StrictMock;
 
 class DeviceInfo_L2test : public L2TestMocks {

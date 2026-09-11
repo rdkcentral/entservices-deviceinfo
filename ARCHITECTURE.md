@@ -2,7 +2,7 @@
 
 ## Overview
 
-The DeviceInfo plugin is a WPEFramework (Thunder) plugin that provides comprehensive device information and capabilities to RDK applications. It exposes device hardware details, network configuration, audio/video capabilities, and system information through a standardized JSON-RPC interface.
+The DeviceInfo plugin is a Thunder plugin that provides comprehensive device information and capabilities to RDK applications. It exposes device hardware details, network configuration, audio/video capabilities, and system information through a standardized JSON-RPC interface.
 
 ## System Architecture
 
@@ -10,7 +10,7 @@ The DeviceInfo plugin is a WPEFramework (Thunder) plugin that provides comprehen
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    WPEFramework Core                         │
+│                    Thunder Core                         │
 │                 (Thunder Plugin Framework)                   │
 └────────────────────────┬────────────────────────────────────┘
                          │
@@ -51,7 +51,7 @@ The DeviceInfo plugin is a WPEFramework (Thunder) plugin that provides comprehen
 #### 1. **DeviceInfo Plugin (Main Entry Point)**
 - **Responsibility**: Plugin lifecycle management, interface aggregation, JSON-RPC endpoint registration
 - **Key Interfaces**: 
-  - `PluginHost::IPlugin` - Standard WPEFramework plugin interface
+  - `PluginHost::IPlugin` - Standard Thunder plugin interface
   - `PluginHost::JSONRPC` - JSON-RPC method dispatcher
 - **Aggregated Services**: IDeviceInfo, IDeviceAudioCapabilities, IDeviceVideoCapabilities
 
@@ -85,7 +85,7 @@ The DeviceInfo plugin is a WPEFramework (Thunder) plugin that provides comprehen
 ## Data Flow
 
 ### Initialization Sequence
-1. WPEFramework loads DeviceInfo plugin and calls `Initialize()`
+1. Thunder loads DeviceInfo plugin and calls `Initialize()`
 2. Plugin instantiates implementation objects (DeviceInfoImpl, AudioCapabilities, VideoCapabilities)
 3. Each implementation initializes IARM Bus connection for hardware access
 4. Plugin registers JSON-RPC methods and interfaces with framework
@@ -97,7 +97,7 @@ Client Application
       │
       │ JSON-RPC Request
       ▼
-WPEFramework JSONRPC Dispatcher
+Thunder JSONRPC Dispatcher
       │
       │ Route to Plugin
       ▼
@@ -118,10 +118,10 @@ JSON Response to Client
 
 ## Integration Points
 
-### WPEFramework Integration
+### Thunder Integration
 - **Plugin Discovery**: Registered via CMake configuration and `.conf.in` files
 - **Communication**: COM-RPC for out-of-process communication, in-process for local calls
-- **Configuration**: JSON-based plugin configuration via WPEFramework configuration system
+- **Configuration**: JSON-based plugin configuration via Thunder configuration system
 
 ### RDK Platform Integration
 - **RFC (Remote Feature Control)**: Retrieves device-specific configuration parameters
@@ -135,7 +135,7 @@ JSON Response to Client
 ## Dependencies
 
 ### Build Dependencies
-- **WPEFramework Core**: Plugin framework and COM-RPC infrastructure
+- **Thunder Core**: Plugin framework and COM-RPC infrastructure
 - **entservices-apis**: Interface definitions (IDeviceInfo, IAudioCapabilities, IVideoCapabilities)
 - **RFC Library**: Configuration management
 - **Device Settings Library**: Hardware abstraction layer

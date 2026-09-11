@@ -23,7 +23,7 @@
 #define API_VERSION_NUMBER_MINOR 0
 #define API_VERSION_NUMBER_PATCH 0
 
-namespace WPEFramework
+namespace Thunder
 {
 
     namespace {
@@ -44,7 +44,7 @@ namespace WPEFramework
     {
 
         /*
-         *Register DeviceInfo module as wpeframework plugin
+         *Register DeviceInfo module as thunder plugin
          **/
         SERVICE_REGISTRATION(DeviceInfo, API_VERSION_NUMBER_MAJOR, API_VERSION_NUMBER_MINOR, API_VERSION_NUMBER_PATCH);
 
@@ -94,7 +94,7 @@ namespace WPEFramework
             {
                 message = _T("DeviceInfo implementation did not provide a configuration interface");
             }
-            // Invoking Plugin API register to wpeframework
+            // Invoking Plugin API register to thunder
             Exchange::JDeviceInfo::Register(*this, _deviceInfo);
             Exchange::JDeviceAudioCapabilities::Register(*this, _deviceAudioCapabilities);
             Exchange::JDeviceVideoCapabilities::Register(*this, _deviceVideoCapabilities);
@@ -186,4 +186,4 @@ namespace WPEFramework
         }
     }
 } // namespace Plugin
-} // namespace WPEFramework
+} // namespace Thunder
