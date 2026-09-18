@@ -84,7 +84,7 @@ jobs:
         run: >
           sudo apt update
           &&
-          sudo apt install -y libsqlite3-dev libcurl4-openssl-dev valgrind lcov clang libsystemd-dev libboost-all-dev libwebsocketpp-dev meson libcunit1 libcunit1-dev curl protobuf-compiler-grpc libgrpc-dev libgrpc++-dev
+          sudo apt install -y gdb libsqlite3-dev libcurl4-openssl-dev valgrind lcov clang libsystemd-dev libboost-all-dev libwebsocketpp-dev meson libcunit1 libcunit1-dev curl protobuf-compiler-grpc libgrpc-dev libgrpc++-dev
 
       - name: Install GStreamer
         run: |
@@ -121,7 +121,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: 2.0.0
+          ref: feature/RDKEMW-25013
 
       - name: Checkout entservices-deviceinfo
         if: ${{ inputs.caller_source == 'local' }}
@@ -204,6 +204,12 @@ jobs:
           cmake --build build/entservices-apis -j8
           &&
           cmake --install build/entservices-apis
+
+      - name: Copy DeviceSettings interface headers
+        # entservices-apis does not install apis/DeviceSettings/*.h under interfaces/ on its own.
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces"
+          find "$GITHUB_WORKSPACE/entservices-apis/apis/DeviceSettings" -name "IDeviceSettings*.h" -exec cp {} "$GITHUB_WORKSPACE/install/usr/include/WPEFramework/interfaces/" \; 2>/dev/null || true
 
       - name: Generate external headers
         # Empty headers to mute errors
@@ -643,7 +649,11 @@ jobs:
           PATH=$GITHUB_WORKSPACE/install/usr/bin:${PATH}
           LD_LIBRARY_PATH=$GITHUB_WORKSPACE/install/usr/lib:$GITHUB_WORKSPACE/install/usr/lib/wpeframework/plugins:${LD_LIBRARY_PATH}
           GTEST_OUTPUT="json:$(pwd)/rdkL1TestResults.json"
-          RdkServicesL1Test &&
+          gdb --batch --return-child-result
+          -ex "set pagination off"
+          -ex "run"
+          -ex "thread apply all bt full"
+          --args RdkServicesL1Test &&
           cp -rf $(pwd)/rdkL1TestResults.json $GITHUB_WORKSPACE/rdkL1TestResultsWithoutValgrind.json &&
           rm -rf $(pwd)/rdkL1TestResults.json
 
