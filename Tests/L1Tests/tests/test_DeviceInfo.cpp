@@ -109,6 +109,10 @@ protected:
         , INIT_CONX(1, 0)
     {
         if (0 != system("mkdir -p /opt/persistent")) { /* do nothing */ }
+        // Create every directory the test bodies need up-front, before the worker
+        // pool starts dispatching DeviceSettings activation jobs: system() forks,
+        // and forking while a worker thread is mid-activation races with it.
+        if (0 != system("mkdir -p /opt/www/authService")) { /* do nothing */ }
         std::remove("/opt/persistent/osdetails.info");
 
         p_iarmBusImplMock = new NiceMock<IarmBusImplMock>;
@@ -216,15 +220,17 @@ protected:
                 }));
 #endif
 
+        // Pre-create the DeviceSettings root mock on the main thread so the
+        // worker-thread QueryInterface() during activation only reads the
+        // (already-populated) mock registry instead of racing to insert into it.
+        (void)DeviceSettingsMock::Get();
+
         EXPECT_EQ(string(""), plugin->Initialize(&service));
 
         {
             std::unique_lock<std::mutex> lock(deviceSettingsMutex);
             deviceSettingsCondition.wait_for(
                 lock, std::chrono::seconds(5), [this]() { return deviceSettingsActivated; });
-        }
-
-        if (0 != system("mkdir -p /opt/www/authService")){ /* do nothig */
         }
     }
 
