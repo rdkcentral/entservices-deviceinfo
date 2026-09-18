@@ -89,9 +89,16 @@ protected:
     Core::Sink<NiceMock<SystemInfo>> subSystem;
     // PluginSmartInterfaceType (used by DSHelper) submits its RegisterJob to the
     // process worker pool; without a real pool installed IWorkerPool::Instance()
-    // is invalid and Submit() segfaults. Reserve 3 threads (pool keeps threads-1).
-    Core::ProxyType<WorkerPoolImplementation> workerPool;
-    bool workerPoolAssigned = false;
+    // is invalid and Submit() segfaults. A single process-wide pool is created once
+    // and reused for every test: repeatedly creating/destroying pool threads per
+    // fixture races with the fork()/clone3 done by system() in the fixture body.
+    static WorkerPoolImplementation& SharedWorkerPool()
+    {
+        static Core::ProxyType<WorkerPoolImplementation> pool =
+            Core::ProxyType<WorkerPoolImplementation>::Create(
+                3, Core::Thread::DefaultStackSize(), 16);
+        return *pool;
+    }
     std::mutex deviceSettingsMutex;
     std::condition_variable deviceSettingsCondition;
     bool deviceSettingsActivated = false;
@@ -100,8 +107,6 @@ protected:
         : plugin(Core::ProxyType<Plugin::DeviceInfo>::Create())
         , handler(*plugin)
         , INIT_CONX(1, 0)
-        , workerPool(Core::ProxyType<WorkerPoolImplementation>::Create(
-              3, Core::Thread::DefaultStackSize(), 16))
     {
         if (0 != system("mkdir -p /opt/persistent")) { /* do nothing */ }
         std::remove("/opt/persistent/osdetails.info");
@@ -156,9 +161,8 @@ protected:
             .WillByDefault(Return(&comLinkMock));
 
         if (!Core::IWorkerPool::IsAvailable()) {
-            Core::IWorkerPool::Assign(&(*workerPool));
-            workerPool->Run();
-            workerPoolAssigned = true;
+            Core::IWorkerPool::Assign(&SharedWorkerPool());
+            SharedWorkerPool().Run();
         }
 
         // DSHelper opens a COM-RPC link to DeviceSettings: the SmartInterface's
@@ -227,12 +231,6 @@ protected:
     virtual ~DeviceInfoTest()
     {
         plugin->Deinitialize(&service);
-
-        if (workerPoolAssigned) {
-            workerPool->Stop();
-            Core::IWorkerPool::Assign(nullptr);
-            workerPoolAssigned = false;
-        }
 
         RfcApi::setImpl(nullptr);
         if (p_rfcApiImplMock != nullptr) {
