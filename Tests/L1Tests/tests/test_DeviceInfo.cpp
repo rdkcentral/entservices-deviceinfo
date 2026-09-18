@@ -38,7 +38,11 @@
 #include "WrapsMock.h"
 #include "ISubSystemMock.h"
 #include "SystemInfo.h"
+#include "WorkerPoolImplementation.h"
+#include "DeviceSettingsMock.h"
+#include <condition_variable>
 #include <fstream>
+#include <mutex>
 #include "ThunderPortability.h"
 
 using namespace WPEFramework;
@@ -83,11 +87,21 @@ protected:
     NiceMock<COMLinkMock> comLinkMock;
     WrapsImplMock* p_wrapsImplMock = nullptr;
     Core::Sink<NiceMock<SystemInfo>> subSystem;
+    // PluginSmartInterfaceType (used by DSHelper) submits its RegisterJob to the
+    // process worker pool; without a real pool installed IWorkerPool::Instance()
+    // is invalid and Submit() segfaults. Reserve 3 threads (pool keeps threads-1).
+    Core::ProxyType<WorkerPoolImplementation> workerPool;
+    bool workerPoolAssigned = false;
+    std::mutex deviceSettingsMutex;
+    std::condition_variable deviceSettingsCondition;
+    bool deviceSettingsActivated = false;
 
     DeviceInfoTest()
         : plugin(Core::ProxyType<Plugin::DeviceInfo>::Create())
         , handler(*plugin)
         , INIT_CONX(1, 0)
+        , workerPool(Core::ProxyType<WorkerPoolImplementation>::Create(
+              3, Core::Thread::DefaultStackSize(), 16))
     {
         if (0 != system("mkdir -p /opt/persistent")) { /* do nothing */ }
         std::remove("/opt/persistent/osdetails.info");
@@ -141,6 +155,35 @@ protected:
         ON_CALL(service, COMLink())
             .WillByDefault(Return(&comLinkMock));
 
+        if (!Core::IWorkerPool::IsAvailable()) {
+            Core::IWorkerPool::Assign(&(*workerPool));
+            workerPool->Run();
+            workerPoolAssigned = true;
+        }
+
+        // DSHelper opens a COM-RPC link to DeviceSettings: the SmartInterface's
+        // RegisterJob calls service.Register() then, on activation, resolves the
+        // root IDeviceSettings via the shell's QueryInterface(IDeviceSettings::ID).
+        ON_CALL(service, QueryInterface(::testing::_))
+            .WillByDefault(::testing::Invoke([](const uint32_t interfaceId) -> void* {
+                if (interfaceId == Exchange::IDeviceSettings::ID) {
+                    Exchange::IDeviceSettings* root = DeviceSettingsMock::Get();
+                    root->AddRef();
+                    return root;
+                }
+                return nullptr;
+            }));
+        ON_CALL(service, Register(::testing::Matcher<PluginHost::IPlugin::INotification*>(::testing::_)))
+            .WillByDefault(::testing::Invoke(
+                [this](PluginHost::IPlugin::INotification* notification) {
+                    notification->Activated("org.rdk.DeviceSettings", &service);
+                    {
+                        std::lock_guard<std::mutex> lock(deviceSettingsMutex);
+                        deviceSettingsActivated = true;
+                    }
+                    deviceSettingsCondition.notify_one();
+                }));
+
 #ifdef USE_THUNDER_R4
         ON_CALL(comLinkMock, Instantiate(::testing::_, ::testing::_, ::testing::_))
             .WillByDefault(::testing::Invoke(
@@ -171,6 +214,12 @@ protected:
 
         EXPECT_EQ(string(""), plugin->Initialize(&service));
 
+        {
+            std::unique_lock<std::mutex> lock(deviceSettingsMutex);
+            deviceSettingsCondition.wait_for(
+                lock, std::chrono::seconds(5), [this]() { return deviceSettingsActivated; });
+        }
+
         if (0 != system("mkdir -p /opt/www/authService")){ /* do nothig */
         }
     }
@@ -178,6 +227,12 @@ protected:
     virtual ~DeviceInfoTest()
     {
         plugin->Deinitialize(&service);
+
+        if (workerPoolAssigned) {
+            workerPool->Stop();
+            Core::IWorkerPool::Assign(nullptr);
+            workerPoolAssigned = false;
+        }
 
         RfcApi::setImpl(nullptr);
         if (p_rfcApiImplMock != nullptr) {
