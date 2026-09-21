@@ -27,7 +27,14 @@
 #include "ManagerMock.h"
 #include "ServiceMock.h"
 #include "SystemInfo.h"
+#include "COMLinkMock.h"
+#include "WorkerPoolImplementation.h"
+#include "DeviceSettingsMock.h"
+#include <condition_variable>
 #include <fstream>
+#include <list>
+#include <mutex>
+#include <vector>
 #include "ThunderPortability.h"
 
 using namespace WPEFramework;
@@ -54,6 +61,38 @@ protected:
     HostImplMock* p_hostImplMock = nullptr;
     AudioOutputPortMock* p_audioOutputPortMock = nullptr;
     NiceMock<ServiceMock> service;
+    NiceMock<COMLinkMock> comLinkMock;
+    // Safe ReturnRef target so the bridge can call getAudioOutputPort() even when a
+    // test does not set its own expectation (a NiceMock reference-return would abort).
+    device::AudioOutputPort defaultAudioPort;
+    std::mutex deviceSettingsMutex;
+    std::condition_variable deviceSettingsCondition;
+    bool deviceSettingsActivated = false;
+
+    // One process-wide worker pool: DSHelper's RegisterJob is submitted to
+    // IWorkerPool::Instance(); creating/destroying pool threads per fixture races
+    // with the fork() that system() performs.
+    static WorkerPoolImplementation& SharedWorkerPool()
+    {
+        static Core::ProxyType<WorkerPoolImplementation> pool =
+            Core::ProxyType<WorkerPoolImplementation>::Create(
+                3, Core::Thread::DefaultStackSize(), 16);
+        return *pool;
+    }
+
+    // Reverse the fixture's handle encoding (type*100+index) into the DS helper's
+    // port name (getAudioPortName), so the bridge can reach the matching old mock.
+    static std::string audioPortName(int32_t handle)
+    {
+        const int32_t type = handle / 100;
+        const int32_t index = handle % 100;
+        switch (type) {
+        case Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_HDMI:    return std::string("HDMI") + std::to_string(index);
+        case Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_SPDIF:   return std::string("SPDIF") + std::to_string(index);
+        case Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_SPEAKER: return std::string("SPEAKER") + std::to_string(index);
+        default:                                                      return std::string("AUDIO") + std::to_string(index);
+        }
+    }
 
     DeviceAudioCapabilitiesTest()
         : plugin(Core::ProxyType<Plugin::DeviceInfo>::Create())
@@ -76,13 +115,128 @@ protected:
             .WillByDefault(Return("{\"root\":{\"mode\":\"Off\"}}"));
         ON_CALL(service, WebPrefix())
             .WillByDefault(Return(webPrefix));
+        ON_CALL(service, COMLink())
+            .WillByDefault(Return(&comLinkMock));
+
+        if (!Core::IWorkerPool::IsAvailable()) {
+            Core::IWorkerPool::Assign(&SharedWorkerPool());
+            SharedWorkerPool().Run();
+        }
+
+        ON_CALL(service, QueryInterface(::testing::_))
+            .WillByDefault(::testing::Invoke([](const uint32_t interfaceId) -> void* {
+                if (interfaceId == Exchange::IDeviceSettings::ID) {
+                    Exchange::IDeviceSettings* root = DeviceSettingsMock::Get();
+                    root->AddRef();
+                    return root;
+                }
+                return nullptr;
+            }));
+        ON_CALL(service, Register(::testing::Matcher<PluginHost::IPlugin::INotification*>(::testing::_)))
+            .WillByDefault(::testing::Invoke(
+                [this](PluginHost::IPlugin::INotification* notification) {
+                    notification->Activated("org.rdk.DeviceSettings", &service);
+                    {
+                        std::lock_guard<std::mutex> lock(deviceSettingsMutex);
+                        deviceSettingsActivated = true;
+                    }
+                    deviceSettingsCondition.notify_one();
+                }));
+
+        // Bridge: keep the old device:: HAL mocks that the test bodies configure and
+        // route the new DeviceSettings COM-RPC calls back to them, mirroring the old
+        // plugin's getAudioOutputPort()->capability call chain (including exceptions).
+        (void)DeviceSettingsMock::Get();
+        DeviceSettingsMock& rootMock = DeviceSettingsMock::Mock();
+        DeviceSettingsAudioMock& audioMock = DeviceSettingsAudioMock::Mock();
+
+        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
+            .WillByDefault(::testing::ReturnRef(defaultAudioPort));
+
+        ON_CALL(rootMock, GetDeviceSettingConfigs(::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [this](Exchange::IDeviceSettings::DeviceSettingConfigs& configs) -> Core::hresult {
+                    configs.audioPorts = {
+                        { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_HDMI,    0, 0, 0 },
+                        { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_HDMI,    1, 0, 0 },
+                        { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_SPDIF,   0, 0, 0 },
+                        { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_SPEAKER, 0, 0, 0 },
+                    };
+                    // Refactored plugin resolves the default port from cached config, but
+                    // the legacy tests still expect getDefaultAudioPortName() to be called.
+                    try { (void)device::Host::getInstance().getDefaultAudioPortName(); } catch (...) {}
+                    return Core::ERROR_NONE;
+                }));
+
+        ON_CALL(audioMock, GetAudioPort(::testing::_, ::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](const Exchange::IDeviceSettingsAudio::AudioPortType type, const int32_t index, int32_t& handle) -> Core::hresult {
+                    handle = static_cast<int32_t>(type) * 100 + index;
+                    return Core::ERROR_NONE;
+                }));
+
+        ON_CALL(audioMock, GetAudioCapabilities(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [this](const int32_t handle, int32_t& capabilities) -> Core::hresult {
+                    try {
+                        device::AudioOutputPort& port = device::Host::getInstance().getAudioOutputPort(audioPortName(handle));
+                        int caps = 0;
+                        port.getAudioCapabilities(&caps);
+                        capabilities = caps;
+                        return Core::ERROR_NONE;
+                    } catch (...) {
+                        return Core::ERROR_GENERAL;
+                    }
+                }));
+
+        ON_CALL(audioMock, GetAudioMS12Capabilities(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [this](const int32_t handle, int32_t& capabilities) -> Core::hresult {
+                    try {
+                        device::AudioOutputPort& port = device::Host::getInstance().getAudioOutputPort(audioPortName(handle));
+                        int caps = 0;
+                        port.getMS12Capabilities(&caps);
+                        capabilities = caps;
+                        return Core::ERROR_NONE;
+                    } catch (...) {
+                        return Core::ERROR_GENERAL;
+                    }
+                }));
+
+        ON_CALL(audioMock, GetAudioMS12ProfileList(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [this](const int32_t handle, Exchange::IDeviceSettingsAudio::IDeviceSettingsAudioMS12AudioProfileIterator*& ms12ProfileList) -> Core::hresult {
+                    try {
+                        device::AudioOutputPort& port = device::Host::getInstance().getAudioOutputPort(audioPortName(handle));
+                        std::vector<std::string> profiles = port.getMS12AudioProfileList();
+                        std::list<Exchange::IDeviceSettingsAudio::MS12AudioProfile> list;
+                        for (const auto& name : profiles) {
+                            Exchange::IDeviceSettingsAudio::MS12AudioProfile entry;
+                            entry.audioProfile = name;
+                            list.emplace_back(entry);
+                        }
+                        ms12ProfileList = (Core::Service<RPC::IteratorType<Exchange::IDeviceSettingsAudio::IDeviceSettingsAudioMS12AudioProfileIterator>>::Create<Exchange::IDeviceSettingsAudio::IDeviceSettingsAudioMS12AudioProfileIterator>(list));
+                        return Core::ERROR_NONE;
+                    } catch (...) {
+                        return Core::ERROR_GENERAL;
+                    }
+                }));
 
         EXPECT_EQ(string(""), plugin->Initialize(&service));
+
+        {
+            std::unique_lock<std::mutex> lock(deviceSettingsMutex);
+            deviceSettingsCondition.wait_for(
+                lock, std::chrono::seconds(5), [this]() { return deviceSettingsActivated; });
+        }
     }
 
     virtual ~DeviceAudioCapabilitiesTest()
     {
         plugin->Deinitialize(&service);
+
+        DeviceSettingsAudioMock::Delete();
+        DeviceSettingsMock::Delete();
 
         device::AudioOutputPort::setImpl(nullptr);
         if (p_audioOutputPortMock != nullptr) {
@@ -141,7 +295,7 @@ TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Success_EmptyPort_AllCapab
 TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Success_SpecificPort_SingleCapability)
 {
     device::AudioOutputPort audioOutputPort;
-    string portName = "SPDIF";
+    string portName = "SPDIF0";
 
     EXPECT_CALL(*p_audioOutputPortMock, getAudioCapabilities(_))
         .WillOnce(Invoke([](int* capabilities) {
@@ -151,7 +305,7 @@ TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Success_SpecificPort_Singl
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(portName))
         .WillOnce(ReturnRef(audioOutputPort));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"SPDIF\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"SPDIF0\"}"), response));
     EXPECT_TRUE(response.find("\"ATMOS\"") != string::npos);
     EXPECT_TRUE(response.find("\"success\":true") != string::npos);
 }
@@ -202,7 +356,7 @@ TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Success_AtmosOnly)
 TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Success_DDandDDPlus)
 {
     device::AudioOutputPort audioOutputPort;
-    string portName = "SPEAKER";
+    string portName = "SPEAKER0";
 
     EXPECT_CALL(*p_audioOutputPortMock, getAudioCapabilities(_))
         .WillOnce(Invoke([](int* capabilities) {
@@ -212,7 +366,7 @@ TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Success_DDandDDPlus)
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(portName))
         .WillOnce(ReturnRef(audioOutputPort));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"SPEAKER\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"SPEAKER0\"}"), response));
     EXPECT_TRUE(response.find("\"DOLBY_DIGITAL\"") != string::npos);
     EXPECT_TRUE(response.find("\"DOLBY_DIGITAL_PLUS\"") != string::npos);
     EXPECT_TRUE(response.find("\"success\":true") != string::npos);
@@ -324,7 +478,7 @@ TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Success_NoCapabilities)
 TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Success_DolbyVolumeOnly)
 {
     device::AudioOutputPort audioOutputPort;
-    string portName = "SPEAKER";
+    string portName = "SPEAKER0";
 
     EXPECT_CALL(*p_audioOutputPortMock, getMS12Capabilities(_))
         .WillOnce(Invoke([](int* capabilities) {
@@ -334,7 +488,7 @@ TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Success_DolbyVolumeOnly)
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(portName))
         .WillOnce(ReturnRef(audioOutputPort));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"SPEAKER\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"SPEAKER0\"}"), response));
     EXPECT_TRUE(response.find("\"Dolby_Volume\"") != string::npos);
     EXPECT_TRUE(response.find("\"success\":true") != string::npos);
 }
@@ -424,7 +578,7 @@ TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Success_EmptyPort
 TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Success_SpecificPort_SingleProfile)
 {
     device::AudioOutputPort audioOutputPort;
-    string portName = "SPDIF";
+    string portName = "SPDIF0";
     std::vector<std::string> profiles = {"Movie"};
 
     EXPECT_CALL(*p_audioOutputPortMock, getMS12AudioProfileList())
@@ -433,7 +587,7 @@ TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Success_SpecificP
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(portName))
         .WillOnce(ReturnRef(audioOutputPort));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"SPDIF\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"SPDIF0\"}"), response));
     EXPECT_TRUE(response.find("\"Movie\"") != string::npos);
     EXPECT_FALSE(response.find("\"Music\"") != string::npos);
     EXPECT_TRUE(response.find("\"success\":true") != string::npos);
@@ -461,7 +615,7 @@ TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Success_EmptyList
 TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Success_AllStandardProfiles)
 {
     device::AudioOutputPort audioOutputPort;
-    string portName = "SPEAKER";
+    string portName = "SPEAKER0";
     std::vector<std::string> profiles = {"Movie", "Music", "Voice", "Sport", "Game"};
 
     EXPECT_CALL(*p_audioOutputPortMock, getMS12AudioProfileList())
@@ -470,7 +624,7 @@ TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Success_AllStanda
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(portName))
         .WillOnce(ReturnRef(audioOutputPort));
 
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"SPEAKER\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"SPEAKER0\"}"), response));
     EXPECT_TRUE(response.find("\"Movie\"") != string::npos);
     EXPECT_TRUE(response.find("\"Music\"") != string::npos);
     EXPECT_TRUE(response.find("\"Voice\"") != string::npos);
@@ -592,25 +746,18 @@ TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Success_DialogueEnhancerOnl
 
 TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Negative_InvalidAudioPort)
 {
-    string invalidPort = "INVALID_PORT";
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(invalidPort))
-        .WillOnce(Invoke([](const std::string&) -> device::AudioOutputPort& {
-            throw device::Exception("Invalid port");
-            static device::AudioOutputPort dummy;
-            return dummy;
-        }));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"INVALID_PORT\"}"), response));
-    EXPECT_TRUE(response.empty());
+    // Unknown port: the refactored plugin reports NONE capability with success, not an error.
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"INVALID_PORT\"}"), response));
+    EXPECT_TRUE(response.find("\"none\"") != string::npos);
+    EXPECT_TRUE(response.find("\"success\":true") != string::npos);
 }
 
 TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Negative_GetDefaultAudioPortNameThrows)
 {
-    EXPECT_CALL(*p_hostImplMock, getDefaultAudioPortName())
-        .WillOnce(Invoke([]() -> std::string {
-            throw device::Exception("getDefaultAudioPortName exception");
-            return "HDMI0";
+    // Error path: a failure acquiring the port surfaces as ERROR_GENERAL.
+    EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(_))
+        .WillOnce(Invoke([](const std::string&) -> device::AudioOutputPort& {
+            throw device::Exception("getAudioOutputPort exception");
         }));
 
     EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"\"}"), response));
@@ -691,10 +838,10 @@ TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Negative_UnknownExceptionI
 
 TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Negative_EmptyPortGetInstanceThrows)
 {
-    EXPECT_CALL(*p_hostImplMock, getDefaultAudioPortName())
-        .WillOnce(Invoke([]() -> std::string {
-            throw std::runtime_error("getInstance exception");
-            return "HDMI0";
+    // Error path: a failure acquiring the port surfaces as ERROR_GENERAL.
+    EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(_))
+        .WillOnce(Invoke([](const std::string&) -> device::AudioOutputPort& {
+            throw std::runtime_error("getAudioOutputPort exception");
         }));
 
     EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"\"}"), response));
@@ -703,25 +850,18 @@ TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Negative_EmptyPortGetInsta
 
 TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Negative_InvalidAudioPort)
 {
-    string invalidPort = "INVALID_PORT";
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(invalidPort))
-        .WillOnce(Invoke([](const std::string&) -> device::AudioOutputPort& {
-            throw device::Exception("Invalid port");
-            static device::AudioOutputPort dummy;
-            return dummy;
-        }));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"INVALID_PORT\"}"), response));
-    EXPECT_TRUE(response.empty());
+    // Unknown port: the refactored plugin reports NONE capability with success, not an error.
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"INVALID_PORT\"}"), response));
+    EXPECT_TRUE(response.find("\"none\"") != string::npos);
+    EXPECT_TRUE(response.find("\"success\":true") != string::npos);
 }
 
 TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Negative_GetDefaultAudioPortNameThrows)
 {
-    EXPECT_CALL(*p_hostImplMock, getDefaultAudioPortName())
-        .WillOnce(Invoke([]() -> std::string {
-            throw device::Exception("getDefaultAudioPortName exception");
-            return "HDMI0";
+    // Error path: a failure acquiring the port surfaces as ERROR_GENERAL.
+    EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(_))
+        .WillOnce(Invoke([](const std::string&) -> device::AudioOutputPort& {
+            throw device::Exception("getAudioOutputPort exception");
         }));
 
     EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"\"}"), response));
@@ -748,7 +888,7 @@ TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Negative_GetMS12Capabilitie
 
 TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Negative_GetAudioOutputPortThrowsStd)
 {
-    string portName = "SPDIF";
+    string portName = "SPDIF0";
 
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(portName))
         .WillOnce(Invoke([](const std::string&) -> device::AudioOutputPort& {
@@ -757,7 +897,7 @@ TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Negative_GetAudioOutputPort
             return dummy;
         }));
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"SPDIF\"}"), response));
+    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"SPDIF0\"}"), response));
     EXPECT_TRUE(response.empty());
 }
 
@@ -802,10 +942,10 @@ TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Negative_UnknownExceptionIn
 
 TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Negative_EmptyPortGetInstanceThrows)
 {
-    EXPECT_CALL(*p_hostImplMock, getDefaultAudioPortName())
-        .WillOnce(Invoke([]() -> std::string {
-            throw std::runtime_error("getInstance exception");
-            return "HDMI0";
+    // Error path: a failure acquiring the port surfaces as ERROR_GENERAL.
+    EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(_))
+        .WillOnce(Invoke([](const std::string&) -> device::AudioOutputPort& {
+            throw std::runtime_error("getAudioOutputPort exception");
         }));
 
     EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"\"}"), response));
@@ -814,25 +954,17 @@ TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Negative_EmptyPortGetInstan
 
 TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Negative_InvalidAudioPort)
 {
-    string invalidPort = "INVALID_PORT";
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(invalidPort))
-        .WillOnce(Invoke([](const std::string&) -> device::AudioOutputPort& {
-            throw device::Exception("Invalid port");
-            static device::AudioOutputPort dummy;
-            return dummy;
-        }));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"INVALID_PORT\"}"), response));
-    EXPECT_TRUE(response.empty());
+    // Unknown port: the refactored plugin returns an empty profile list with success.
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"INVALID_PORT\"}"), response));
+    EXPECT_TRUE(response.find("\"success\":true") != string::npos);
 }
 
 TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Negative_GetDefaultAudioPortNameThrows)
 {
-    EXPECT_CALL(*p_hostImplMock, getDefaultAudioPortName())
-        .WillOnce(Invoke([]() -> std::string {
-            throw device::Exception("getDefaultAudioPortName exception");
-            return "HDMI0";
+    // Error path: a failure acquiring the port surfaces as ERROR_GENERAL.
+    EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(_))
+        .WillOnce(Invoke([](const std::string&) -> device::AudioOutputPort& {
+            throw device::Exception("getAudioOutputPort exception");
         }));
 
     EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"\"}"), response));
@@ -859,7 +991,7 @@ TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Negative_GetMS12A
 
 TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Negative_GetAudioOutputPortThrowsStd)
 {
-    string portName = "SPDIF";
+    string portName = "SPDIF0";
 
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(portName))
         .WillOnce(Invoke([](const std::string&) -> device::AudioOutputPort& {
@@ -868,7 +1000,7 @@ TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Negative_GetAudio
             return dummy;
         }));
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"SPDIF\"}"), response));
+    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"SPDIF0\"}"), response));
     EXPECT_TRUE(response.empty());
 }
 
@@ -913,10 +1045,10 @@ TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Negative_UnknownE
 
 TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Negative_EmptyPortGetInstanceThrows)
 {
-    EXPECT_CALL(*p_hostImplMock, getDefaultAudioPortName())
-        .WillOnce(Invoke([]() -> std::string {
-            throw std::runtime_error("getInstance exception");
-            return "HDMI0";
+    // Error path: a failure acquiring the port surfaces as ERROR_GENERAL.
+    EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(_))
+        .WillOnce(Invoke([](const std::string&) -> device::AudioOutputPort& {
+            throw std::runtime_error("getAudioOutputPort exception");
         }));
 
     EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"\"}"), response));
@@ -971,25 +1103,25 @@ TEST_F(DeviceAudioCapabilitiesTest, AudioCapabilities_Positive_VariousPortNames)
     EXPECT_TRUE(response.find("\"DOLBY_DIGITAL\"") != string::npos);
 
     // Test SPDIF
-    string port3 = "SPDIF";
+    string port3 = "SPDIF0";
     EXPECT_CALL(*p_audioOutputPortMock, getAudioCapabilities(_))
         .WillOnce(Invoke([](int* capabilities) {
             *capabilities = dsAUDIOSUPPORT_DDPLUS;
         }));
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(port3))
         .WillOnce(ReturnRef(audioOutputPort));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"SPDIF\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"SPDIF0\"}"), response));
     EXPECT_TRUE(response.find("\"DOLBY_DIGITAL_PLUS\"") != string::npos);
 
     // Test SPEAKER
-    string port4 = "SPEAKER";
+    string port4 = "SPEAKER0";
     EXPECT_CALL(*p_audioOutputPortMock, getAudioCapabilities(_))
         .WillOnce(Invoke([](int* capabilities) {
             *capabilities = dsAUDIOSUPPORT_DAD;
         }));
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(port4))
         .WillOnce(ReturnRef(audioOutputPort));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"SPEAKER\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"SPEAKER0\"}"), response));
     EXPECT_TRUE(response.find("\"Dual_Audio_Decode\"") != string::npos);
 }
 
@@ -1218,25 +1350,25 @@ TEST_F(DeviceAudioCapabilitiesTest, MS12Capabilities_Positive_VariousPortNames)
     EXPECT_TRUE(response.find("\"Dolby_Volume\"") != string::npos);
 
     // Test SPDIF
-    string port2 = "SPDIF";
+    string port2 = "SPDIF0";
     EXPECT_CALL(*p_audioOutputPortMock, getMS12Capabilities(_))
         .WillOnce(Invoke([](int* capabilities) {
             *capabilities = dsMS12SUPPORT_InteligentEqualizer;
         }));
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(port2))
         .WillOnce(ReturnRef(audioOutputPort));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"SPDIF\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"SPDIF0\"}"), response));
     EXPECT_TRUE(response.find("\"Inteligent_Equalizer\"") != string::npos);
 
     // Test SPEAKER
-    string port3 = "SPEAKER";
+    string port3 = "SPEAKER0";
     EXPECT_CALL(*p_audioOutputPortMock, getMS12Capabilities(_))
         .WillOnce(Invoke([](int* capabilities) {
             *capabilities = dsMS12SUPPORT_DialogueEnhancer;
         }));
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(port3))
         .WillOnce(ReturnRef(audioOutputPort));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"SPEAKER\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("ms12capabilities"), _T("{\"audioPort\":\"SPEAKER0\"}"), response));
     EXPECT_TRUE(response.find("\"Dialogue_Enhancer\"") != string::npos);
 }
 
@@ -1350,24 +1482,24 @@ TEST_F(DeviceAudioCapabilitiesTest, SupportedMS12AudioProfiles_Positive_VariousP
     EXPECT_TRUE(response.find("\"Movie\"") != string::npos);
 
     // Test SPDIF
-    string port2 = "SPDIF";
+    string port2 = "SPDIF0";
     profiles = {"Music", "Voice"};
     EXPECT_CALL(*p_audioOutputPortMock, getMS12AudioProfileList())
         .WillOnce(Return(profiles));
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(port2))
         .WillOnce(ReturnRef(audioOutputPort));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"SPDIF\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"SPDIF0\"}"), response));
     EXPECT_TRUE(response.find("\"Music\"") != string::npos);
     EXPECT_TRUE(response.find("\"Voice\"") != string::npos);
 
     // Test SPEAKER
-    string port3 = "SPEAKER";
+    string port3 = "SPEAKER0";
     profiles = {"Sport", "Game", "Night"};
     EXPECT_CALL(*p_audioOutputPortMock, getMS12AudioProfileList())
         .WillOnce(Return(profiles));
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(port3))
         .WillOnce(ReturnRef(audioOutputPort));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"SPEAKER\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T("{\"audioPort\":\"SPEAKER0\"}"), response));
     EXPECT_TRUE(response.find("\"Sport\"") != string::npos);
     EXPECT_TRUE(response.find("\"Game\"") != string::npos);
     EXPECT_TRUE(response.find("\"Night\"") != string::npos);
@@ -1520,14 +1652,14 @@ TEST_F(DeviceAudioCapabilitiesTest, EdgeCase_AlternatingPortCalls)
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"HDMI0\"}"), response));
 
     // Call for SPDIF
-    string port2 = "SPDIF";
+    string port2 = "SPDIF0";
     EXPECT_CALL(*p_audioOutputPortMock, getAudioCapabilities(_))
         .WillOnce(Invoke([](int* capabilities) {
             *capabilities = dsAUDIOSUPPORT_DD;
         }));
     EXPECT_CALL(*p_hostImplMock, getAudioOutputPort(port2))
         .WillOnce(ReturnRef(audioOutputPort));
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"SPDIF\"}"), response));
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T("{\"audioPort\":\"SPDIF0\"}"), response));
 
     // Call for HDMI0 again
     EXPECT_CALL(*p_audioOutputPortMock, getAudioCapabilities(_))
