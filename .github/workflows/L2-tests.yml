@@ -105,7 +105,9 @@ jobs:
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: feature/RDKEMW-25013
+          # Pinned commit on feature/RDKEMW-25013: newer commits removed the libds
+          # mocks/devicesettings.h that this workflow force-includes.
+          ref: 6e1291f76200408a21bbd8970f4d663545c315eb
 
       - name: Checkout googletest
         if: steps.cache.outputs.cache-hit != 'true'
