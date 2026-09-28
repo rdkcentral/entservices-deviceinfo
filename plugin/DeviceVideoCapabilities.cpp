@@ -19,30 +19,41 @@
 
 #include "DeviceVideoCapabilities.h"
 
-#include "exception.hpp"
-#include "host.hpp"
-#include "manager.hpp"
-#include "videoOutputPortConfig.hpp"
-
-#include "UtilsIarm.h"
+#include "DeviceSettingsInterface.h"
+#include <interfaces/IDeviceSettingsHost.h>    // Exchange::IDeviceSettingsHost (GetEDID)
+#include <sstream>
 
 namespace WPEFramework {
 namespace Plugin {
+
+    void DeviceVideoCapabilities::OnDeviceSettingsActivated()
+    {
+        // Config is loaded lazily by DSHelper::_ensureConfigLoaded() on the first
+        // accessor call. No explicit load needed here.
+        LOGINFO("DeviceVideoCapabilities: DeviceSettings activated");
+    }
+
+    void DeviceVideoCapabilities::OnDeviceSettingsDeactivated()
+    {
+        // DSHelper::Operational(false) already clears all config stores and handles.
+        LOGINFO("DeviceVideoCapabilities: DeviceSettings deactivated");
+    }
 
     SERVICE_REGISTRATION(DeviceVideoCapabilities, 1, 0);
 
     DeviceVideoCapabilities::DeviceVideoCapabilities()
     {
-        Utils::IARM::init();
+    }
 
-        try {
-            device::Manager::Initialize();
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-        } catch (...) {
-        }
+    DeviceVideoCapabilities::~DeviceVideoCapabilities()
+    {
+        DSHelper::Close();
+    }
+
+    uint32_t DeviceVideoCapabilities::Configure(PluginHost::IShell* service)
+    {
+        DSHelper::Open(service, "DeviceVideoCaps");
+        return Core::ERROR_NONE;
     }
 
     Core::hresult DeviceVideoCapabilities::SupportedVideoDisplays(RPC::IStringIterator*& supportedVideoDisplays, bool& success) const
@@ -51,35 +62,17 @@ namespace Plugin {
 
         std::list<string> list;
 
-        try {
-            const auto& vPorts = device::Host::getInstance().getVideoOutputPorts();
-            for (size_t i = 0; i < vPorts.size(); i++) {
-
-                /**
-                 * There's N:1 relation between VideoOutputPort and AudioOutputPort.
-                 * When there are multiple Audio Ports on the Video Port,
-                 * there are multiple VideoOutputPort-s as well.
-                 * Those VideoOutputPort-s are the same except holding a different Audio Port id.
-                 * As a result, a list of Video Ports has multiple Video Ports
-                 * that represent the same Video Port, but different Audio Port.
-                 * A list of VideoOutputPort-s returned from DS
-                 * needs to be filtered by name.
-                 */
-
-                auto name = vPorts.at(i).getName();
-                if (std::find(list.begin(), list.end(), name) != list.end())
-                    continue;
-
+        // Read from cached config via DSHelper — no COM-RPC round-trip needed for static port enumeration
+        std::vector<VideoPortEntry> entries;
+        if (!DSHelper::getVideoPortEntries(entries)) {
+            LOGERR("SupportedVideoDisplays: DeviceSettings config not available");
+            return Core::ERROR_UNAVAILABLE;
+        }
+        for (size_t i = 0; i < entries.size(); ++i) {
+            const string& name = entries[i].name;
+            if (std::find(list.begin(), list.end(), name) == list.end()) {
                 list.emplace_back(name);
             }
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (...) {
-            result = Core::ERROR_GENERAL;
         }
 
         if (result == Core::ERROR_NONE) {
@@ -94,29 +87,33 @@ namespace Plugin {
     {
         uint32_t result = Core::ERROR_NONE;
 
-        std::vector<uint8_t> edidVec({ 'u', 'n', 'k', 'n', 'o', 'w', 'n' });
-        try {
-            std::vector<unsigned char> edidVec2;
-            device::Host::getInstance().getHostEDID(edidVec2);
-            edidVec = std::move(edidVec2);
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (...) {
-            result = Core::ERROR_GENERAL;
+        // COM-RPC path: use IDeviceSettingsHost::GetEDID (maps device::Host::getHostEDID).
+        // Standard EDID is 128 bytes (base) or 256 bytes (with 1 extension block).
+        // Allocate 256 bytes; trailing zeros are trimmed before base64 encoding.
+        auto* host = AcquireSubInterface<Exchange::IDeviceSettingsHost>();
+        if (!host) {
+            LOGERR("HostEDID: DeviceSettings host interface not available");
+            return Core::ERROR_UNAVAILABLE;
         }
 
-        if (result == Core::ERROR_NONE) {
-            // convert to base64
+        static const uint16_t kEdidBufLen = 256;
+        std::vector<uint8_t> edidBuf(kEdidBufLen, 0);
+        result = host->GetEDID(edidBuf.data(), kEdidBufLen);
+        host->Release();
 
-            if (edidVec.size() > (size_t)std::numeric_limits<uint16_t>::max()) {
+        if (result == Core::ERROR_NONE) {
+            // Trim trailing zero-padding to find the actual EDID size
+            size_t actualLen = kEdidBufLen;
+            while (actualLen > 0 && edidBuf[actualLen - 1] == 0) {
+                actualLen--;
+            }
+            if (actualLen == 0) actualLen = kEdidBufLen; // safety: keep full buffer
+
+            if (actualLen > static_cast<size_t>(std::numeric_limits<uint16_t>::max())) {
                 result = Core::ERROR_GENERAL;
             } else {
                 string base64String;
-                Core::ToString((uint8_t*)&edidVec[0], edidVec.size(), true, base64String);
+                Core::ToString(edidBuf.data(), static_cast<uint16_t>(actualLen), true, base64String);
                 hostEdid.EDID = std::move(base64String);
             }
         }
@@ -128,18 +125,13 @@ namespace Plugin {
     {
         uint32_t result = Core::ERROR_NONE;
 
-        try {
-            auto strVideoPort = videoDisplay.empty() ? device::Host::getInstance().getDefaultVideoPortName() : videoDisplay;
-            auto& vPort = device::Host::getInstance().getVideoOutputPort(strVideoPort);
-            defaultResln.defaultResolution = vPort.getDefaultResolution().getName();
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (...) {
-            result = Core::ERROR_GENERAL;
+        // Read from cached config via DSHelper — no COM-RPC round-trip needed
+        const string portName = videoDisplay.empty() ? DSHelper::getDefaultVideoPortName() : videoDisplay;
+        const string res = DSHelper::getVideoPortDefaultResolution(portName);
+        if (res.empty()) {
+            result = Core::ERROR_NOT_EXIST;
+        } else {
+            defaultResln.defaultResolution = res;
         }
 
         return result;
@@ -151,21 +143,23 @@ namespace Plugin {
 
         std::list<string> list;
 
-        try {
-            auto strVideoPort = videoDisplay.empty() ? device::Host::getInstance().getDefaultVideoPortName() : videoDisplay;
-            auto& vPort = device::Host::getInstance().getVideoOutputPort(strVideoPort);
-            const auto resolutions = device::VideoOutputPortConfig::getInstance().getPortType(vPort.getType().getId()).getSupportedResolutions();
-            for (size_t i = 0; i < resolutions.size(); i++) {
-                list.emplace_back(resolutions.at(i).getName());
+        // Read from cached config via DSHelper — no COM-RPC round-trip needed
+        const string portName = videoDisplay.empty() ? DSHelper::getDefaultVideoPortName() : videoDisplay;
+        VideoPortEntry resolvedEntry;
+        if (!DSHelper::resolveVideoPortByName(portName, resolvedEntry)) {
+            result = Core::ERROR_NOT_EXIST;
+        } else {
+            VideoPortTypeConfig typeConfig;
+            if (DSHelper::getVideoPortTypeConfig(resolvedEntry.type, typeConfig)) {
+                // Parse comma-separated list of supported resolution names
+                std::istringstream ss(typeConfig.supportedResolutionNames);
+                string token;
+                while (std::getline(ss, token, ',')) {
+                    if (!token.empty()) {
+                        list.emplace_back(token);
+                    }
+                }
             }
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (...) {
-            result = Core::ERROR_GENERAL;
         }
 
         if (result == Core::ERROR_NONE) {
@@ -180,28 +174,39 @@ namespace Plugin {
     {
         uint32_t result = Core::ERROR_NONE;
 
-        try {
-            auto strVideoPort = videoDisplay.empty() ? device::Host::getInstance().getDefaultVideoPortName() : videoDisplay;
-            auto& vPort = device::VideoOutputPortConfig::getInstance().getPort(strVideoPort);
-            switch (vPort.getHDCPProtocol()) {
-            case dsHDCP_VERSION_2X:
+        // Use cached config via DSHelper for port name resolution — only HDCP version query needs COM-RPC
+        const string portName = videoDisplay.empty() ? DSHelper::getDefaultVideoPortName() : videoDisplay;
+        VideoPortEntry resolvedEntry;
+        if (!DSHelper::resolveVideoPortByName(portName, resolvedEntry)) {
+            return Core::ERROR_NOT_EXIST;
+        }
+        // Use the cached video port handle acquired during config loading
+        const int32_t handle = DSHelper::getCachedVideoPortHandle(resolvedEntry.name);
+        if (handle == INVALID_DS_HANDLE) {
+            LOGERR("SupportedHdcp: video port handle not available for '%s'", resolvedEntry.name.c_str());
+            return Core::ERROR_UNAVAILABLE;
+        }
+        auto* vp = AcquireSubInterface<Exchange::IDeviceSettingsVideoPort>();
+        if (!vp) {
+            LOGERR("SupportedHdcp: IDeviceSettingsVideoPort interface not available");
+            return Core::ERROR_UNAVAILABLE;
+        }
+        Exchange::IDeviceSettingsVideoPort::HDCPProtocolVersion version;
+        result = vp->GetHDCPProtocolVersionOnVideoPort(handle, version);
+        if (result == Core::ERROR_NONE) {
+            switch (version) {
+            case Exchange::IDeviceSettingsVideoPort::DS_HDCP_VERSION_2X:
                 supportedHDCPVer.supportedHDCPVersion = HDCP_22;
                 break;
-            case dsHDCP_VERSION_1X:
+            case Exchange::IDeviceSettingsVideoPort::DS_HDCP_VERSION_1X:
                 supportedHDCPVer.supportedHDCPVersion = HDCP_14;
                 break;
             default:
                 result = Core::ERROR_GENERAL;
+                break;
             }
-        } catch (const device::Exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (const std::exception& e) {
-            TRACE(Trace::Fatal, (_T("Exception caught %s"), e.what()));
-            result = Core::ERROR_GENERAL;
-        } catch (...) {
-            result = Core::ERROR_GENERAL;
         }
+        vp->Release();
         return result;
     }
 }
