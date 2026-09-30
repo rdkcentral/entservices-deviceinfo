@@ -21,19 +21,18 @@
 
 #include "DeviceInfo.h"
 
-#include "AudioOutputPortMock.h"
-#include "HostMock.h"
 #include "IarmBusMock.h"
-#include "ManagerMock.h"
 #include "ServiceMock.h"
-#include "VideoOutputPortConfigMock.h"
-#include "VideoOutputPortMock.h"
-#include "VideoOutputPortTypeMock.h"
-#include "VideoResolutionMock.h"
+#include "COMLinkMock.h"
+#include "DeviceSettingsMock.h"
 
 #include "SystemInfo.h"
 
+#include <condition_variable>
 #include <fstream>
+#include <mutex>
+#include <string>
+#include <vector>
 #include "ThunderPortability.h"
 
 using namespace WPEFramework;
@@ -63,18 +62,18 @@ protected:
 class DeviceInfoJsonRpcInitializedTest : public DeviceInfoJsonRpcTest {
 protected:
     IarmBusImplMock   *p_iarmBusImplMock = nullptr ;
-    ManagerImplMock   *p_managerImplMock = nullptr ;
     NiceMock<ServiceMock> service;
+    NiceMock<COMLinkMock> comLinkMock;
     Core::Sink<NiceMock<SystemInfo>> subSystem;
+    std::mutex deviceSettingsMutex;
+    std::condition_variable deviceSettingsCondition;
+    bool deviceSettingsActivated = false;
 
     DeviceInfoJsonRpcInitializedTest()
         : DeviceInfoJsonRpcTest()
     {
         p_iarmBusImplMock  = new NiceMock <IarmBusImplMock>;
         IarmBus::setImpl(p_iarmBusImplMock);
-
-        p_managerImplMock  = new NiceMock <ManagerImplMock>;
-        device::Manager::setImpl(p_managerImplMock);
 
         ON_CALL(service, ConfigLine())
             .WillByDefault(::testing::Return("{\"root\":{\"mode\":\"Off\"}}"));
@@ -87,12 +86,53 @@ protected:
                     result->AddRef();
                     return result;
                 }));
+        ON_CALL(service, COMLink())
+            .WillByDefault(::testing::Return(&comLinkMock));
+
+        // DSHelper opens a COM-RPC link to DeviceSettings: the SmartInterface's
+        // RegisterJob calls service.Register() then, on activation, resolves the
+        // root IDeviceSettings via the shell's QueryInterface(IDeviceSettings::ID).
+        // Needed even for the non-DeviceSettings tests below (systeminfo, addresses,
+        // etc.) because DeviceAudioCapabilities::Configure()/DeviceVideoCapabilities::
+        // Configure() both call DSHelper::Open() during Plugin::DeviceInfo::Initialize()
+        // regardless of which JSON-RPC method a given test actually exercises.
+        ON_CALL(service, QueryInterface(::testing::_))
+            .WillByDefault(::testing::Invoke([](const uint32_t interfaceId) -> void* {
+                if (interfaceId == Exchange::IDeviceSettings::ID) {
+                    Exchange::IDeviceSettings* root = DeviceSettingsMock::Get();
+                    root->AddRef();
+                    return root;
+                }
+                return nullptr;
+            }));
+        ON_CALL(service, Register(::testing::Matcher<PluginHost::IPlugin::INotification*>(::testing::_)))
+            .WillByDefault(::testing::Invoke(
+                [this](PluginHost::IPlugin::INotification* notification) {
+                    notification->Activated("org.rdk.DeviceSettings", &service);
+                    {
+                        std::lock_guard<std::mutex> lock(deviceSettingsMutex);
+                        deviceSettingsActivated = true;
+                    }
+                    deviceSettingsCondition.notify_one();
+                }));
+
+        (void)DeviceSettingsMock::Get();
 
         EXPECT_EQ(string(""), plugin->Initialize(&service));
+
+        {
+            std::unique_lock<std::mutex> lock(deviceSettingsMutex);
+            deviceSettingsCondition.wait_for(
+                lock, std::chrono::seconds(5), [this]() { return deviceSettingsActivated; });
+        }
     }
     virtual ~DeviceInfoJsonRpcInitializedTest() override
     {
         plugin->Deinitialize(&service);
+
+        // Cascades to every DeviceSettings<Component>Mock::Delete() (see
+        // DeviceSettingsMock::Delete()).
+        DeviceSettingsMock::Delete();
 
         IarmBus::setImpl(nullptr);
         if (p_iarmBusImplMock != nullptr)
@@ -100,92 +140,73 @@ protected:
             delete p_iarmBusImplMock;
             p_iarmBusImplMock = nullptr;
         }
-        device::Manager::setImpl(nullptr);
-        if (p_managerImplMock != nullptr)
-        {
-            delete p_managerImplMock;
-            p_managerImplMock = nullptr;
-        }
     }
 };
 
+// Stubs DeviceSettingsMock/DeviceSettingsAudioMock/DeviceSettingsVideoPortMock/
+// DeviceSettingsHostMock directly (the COM-RPC interfaces DeviceInfoImplementation/
+// DeviceAudioCapabilities/DeviceVideoCapabilities now call), instead of the legacy
+// device::Host/AudioOutputPort/VideoOutputPort* HAL mocks. Default config: a single
+// HDMI0 port for both audio and video, with a 1080p default/supported resolution —
+// covers every test below; individual tests only add sub-interface (Audio/VideoPort/
+// Host) stubs for the specific COM-RPC call they exercise.
 class DeviceInfoJsonRpcInitializedDsTest : public DeviceInfoJsonRpcInitializedTest {
 protected:
-        HostImplMock             *p_hostImplMock = nullptr ;
-        AudioOutputPortMock      *p_audioOutputPortMock = nullptr ;
-        VideoResolutionMock      *p_videoResolutionMock = nullptr ;
-        VideoOutputPortMock      *p_videoOutputPortMock = nullptr ;
-
     DeviceInfoJsonRpcInitializedDsTest()
         : DeviceInfoJsonRpcInitializedTest()
     {
-        p_hostImplMock  = new NiceMock <HostImplMock>;
-        device::Host::setImpl(p_hostImplMock);
-        p_audioOutputPortMock  = new NiceMock <AudioOutputPortMock>;
-        device::AudioOutputPort::setImpl(p_audioOutputPortMock);
+        SetDeviceConfig();
 
-        p_videoResolutionMock  = new NiceMock <VideoResolutionMock>;
-        device::VideoResolution::setImpl(p_videoResolutionMock);
-        p_videoOutputPortMock  = new NiceMock <VideoOutputPortMock>;
-        device::VideoOutputPort::setImpl(p_videoOutputPortMock);
+        ON_CALL(DeviceSettingsAudioMock::Mock(), GetAudioPort(::testing::_, ::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](const Exchange::IDeviceSettingsAudio::AudioPortType type, const int32_t index, int32_t& handle) -> Core::hresult {
+                    handle = static_cast<int32_t>(type) * 100 + index;
+                    return Core::ERROR_NONE;
+                }));
+        ON_CALL(DeviceSettingsVideoPortMock::Mock(), GetVideoPort(::testing::_, ::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](const Exchange::IDeviceSettingsVideoPort::VideoPort type, const int32_t index, int32_t& handle) -> Core::hresult {
+                    handle = static_cast<int32_t>(type) * 100 + index;
+                    return Core::ERROR_NONE;
+                }));
     }
-    virtual ~DeviceInfoJsonRpcInitializedDsTest() override
+    virtual ~DeviceInfoJsonRpcInitializedDsTest() override = default;
+
+    // (Re)configures the mocked DeviceSettings root's GetDeviceSettingConfigs()
+    // response. Safe to call again from inside a TEST_F body before the first
+    // JSON-RPC call in that test (config is loaded lazily, once, per test).
+    void SetDeviceConfig(const string& defaultResolution = "1080p", const string& supportedResolutionNames = "1080p")
     {
-        device::AudioOutputPort::setImpl(nullptr);
-        if (p_audioOutputPortMock != nullptr)
-        {
-            delete p_audioOutputPortMock;
-            p_audioOutputPortMock = nullptr;
-        }
-        device::VideoResolution::setImpl(nullptr);
-        if (p_videoResolutionMock != nullptr)
-        {
-            delete p_videoResolutionMock;
-            p_videoResolutionMock = nullptr;
-        }
-        device::VideoOutputPort::setImpl(nullptr);
-        if (p_videoOutputPortMock != nullptr)
-        {
-            delete p_videoOutputPortMock;
-            p_videoOutputPortMock = nullptr;
-        }
-        device::Host::setImpl(nullptr);
-        if (p_hostImplMock != nullptr)
-        {
-            delete p_hostImplMock;
-            p_hostImplMock = nullptr;
-        }
+        ON_CALL(DeviceSettingsMock::Mock(), GetDeviceSettingConfigs(::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [defaultResolution, supportedResolutionNames](Exchange::IDeviceSettings::DeviceSettingConfigs& configs) -> Core::hresult {
+                    Exchange::IDeviceSettings::AudioPortConfigInfo audioPortCfg{};
+                    audioPortCfg.audioPortType = Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_HDMI;
+                    audioPortCfg.audioPortIndex = 0;
+                    configs.audioPorts.push_back(audioPortCfg);
+
+                    Exchange::IDeviceSettings::VideoPortTypeConfig typeCfg{};
+                    typeCfg.typeId = Exchange::IDeviceSettingsVideoPort::DS_VIDEO_PORT_TYPE_HDMI;
+                    typeCfg.dtcpSupported = false;
+                    typeCfg.hdcpSupported = true;
+                    typeCfg.restrictedResolution = 0;
+                    typeCfg.supportedResolutionNames = supportedResolutionNames;
+                    configs.videoPortTypes.push_back(typeCfg);
+
+                    Exchange::IDeviceSettings::VideoPortPortConfig portCfg{};
+                    portCfg.videoPortType = Exchange::IDeviceSettingsVideoPort::DS_VIDEO_PORT_TYPE_HDMI;
+                    portCfg.videoPortIndex = 0;
+                    portCfg.defaultResolution = defaultResolution;
+                    configs.videoPorts.push_back(portCfg);
+
+                    return Core::ERROR_NONE;
+                }));
     }
 };
 
+// No longer needs any mocks beyond DeviceInfoJsonRpcInitializedDsTest's — kept as a
+// distinct type purely for test-grouping continuity with the pre-migration file.
 class DeviceInfoJsonRpcInitializedDsVideoOutputTest : public DeviceInfoJsonRpcInitializedDsTest {
-protected:
-    VideoOutputPortConfigImplMock  *p_videoOutputPortConfigImplMock = nullptr ;
-    VideoOutputPortTypeMock        *p_videoOutputPortTypeMock = nullptr ;
-
-    DeviceInfoJsonRpcInitializedDsVideoOutputTest()
-        : DeviceInfoJsonRpcInitializedDsTest()
-    {
-        p_videoOutputPortConfigImplMock  = new NiceMock <VideoOutputPortConfigImplMock>;
-        device::VideoOutputPortConfig::setImpl(p_videoOutputPortConfigImplMock);
-        p_videoOutputPortTypeMock  = new NiceMock <VideoOutputPortTypeMock>;
-        device::VideoOutputPortType::setImpl(p_videoOutputPortTypeMock);
-    }
-    virtual ~DeviceInfoJsonRpcInitializedDsVideoOutputTest() override
-    {
-        device::VideoOutputPortType::setImpl(nullptr);
-        if (p_videoOutputPortTypeMock != nullptr)
-        {
-            delete p_videoOutputPortTypeMock;
-            p_videoOutputPortTypeMock = nullptr;
-        }
-        device::VideoOutputPortConfig::setImpl(nullptr);
-        if (p_videoOutputPortConfigImplMock != nullptr)
-        {
-            delete p_videoOutputPortConfigImplMock;
-            p_videoOutputPortConfigImplMock = nullptr;
-        }
-    }
 };
 
 TEST_F(DeviceInfoJsonRpcTest, registeredMethods)
@@ -309,38 +330,29 @@ TEST_F(DeviceInfoJsonRpcInitializedTest, devicetype)
 
 TEST_F(DeviceInfoJsonRpcInitializedDsTest, supportedaudioports)
 {
-    device::AudioOutputPort audioOutputPort;
-    string audioPort(_T("HDMI0"));
-
-    ON_CALL(*p_audioOutputPortMock, getName())
-        .WillByDefault(::testing::ReturnRef(audioPort));
-    ON_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillByDefault(::testing::Return(device::List<device::AudioOutputPort>({ audioOutputPort })));
-
+    // Default config (fixture) already has a single HDMI0 audio port.
+    // NOTE: SupportedAudioPorts() also declares a "success" @out param (see
+    // IDeviceInfo.h) that this test's literal previously omitted.
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"supportedAudioPorts\":[\"HDMI0\"]}"));
+    EXPECT_EQ(response, _T("{\"supportedAudioPorts\":[\"HDMI0\"],\"success\":true}"));
 }
 
 TEST_F(DeviceInfoJsonRpcInitializedDsTest, supportedvideodisplays)
 {
-    device::VideoOutputPort videoOutputPort;
-    string videoPort(_T("HDMI0"));
-
-    ON_CALL(*p_videoOutputPortMock, getName())
-        .WillByDefault(::testing::ReturnRef(videoPort));
-    ON_CALL(*p_hostImplMock, getVideoOutputPorts())
-        .WillByDefault(::testing::Return(device::List<device::VideoOutputPort>({ videoOutputPort })));
-
+    // Default config (fixture) already has a single HDMI0 video port.
+    // NOTE: SupportedVideoDisplays() also declares a "success" @out param (see
+    // IDeviceInfo.h) that this test's literal previously omitted.
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedvideodisplays"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"supportedVideoDisplays\":[\"HDMI0\"]}"));
+    EXPECT_EQ(response, _T("{\"supportedVideoDisplays\":[\"HDMI0\"],\"success\":true}"));
 }
 
 TEST_F(DeviceInfoJsonRpcInitializedDsTest, hostedid)
 {
-    ON_CALL(*p_hostImplMock, getHostEDID(::testing::_))
+    ON_CALL(DeviceSettingsHostMock::Mock(), GetEDID(::testing::_, ::testing::_))
         .WillByDefault(::testing::Invoke(
-            [&](std::vector<uint8_t>& edid) {
-                edid = { 't', 'e', 's', 't' };
+            [](uint8_t edId[], const uint16_t) -> Core::hresult {
+                edId[0] = 't'; edId[1] = 'e'; edId[2] = 's'; edId[3] = 't';
+                return Core::ERROR_NONE;
             }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("hostedid"), _T(""), response));
@@ -349,62 +361,26 @@ TEST_F(DeviceInfoJsonRpcInitializedDsTest, hostedid)
 
 TEST_F(DeviceInfoJsonRpcInitializedDsTest, defaultresolution)
 {
-    device::VideoOutputPort videoOutputPort;
-    device::VideoResolution videoResolution;
-    string videoPort(_T("HDMI0"));
-    string videoPortDefaultResolution(_T("1080p"));
-
-    ON_CALL(*p_videoResolutionMock, getName())
-        .WillByDefault(::testing::ReturnRef(videoPortDefaultResolution));
-    ON_CALL(*p_videoOutputPortMock, getDefaultResolution())
-        .WillByDefault(::testing::ReturnRef(videoResolution));
-    ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-        .WillByDefault(::testing::Return(videoPort));
-    ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
-        .WillByDefault(::testing::ReturnRef(videoOutputPort));
-
+    // Default config (fixture) already has HDMI0 with defaultResolution "1080p".
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("defaultresolution"), _T(""), response));
     EXPECT_EQ(response, _T("{\"defaultResolution\":\"1080p\"}"));
 }
 
 TEST_F(DeviceInfoJsonRpcInitializedDsVideoOutputTest, supportedresolutions)
 {
-    device::VideoOutputPort videoOutputPort;
-    device::VideoOutputPortType videoOutputPortType;
-    device::VideoResolution videoResolution;
-    string videoPort(_T("HDMI0"));
-    string videoPortSupportedResolution(_T("1080p"));
-
-    ON_CALL(*p_videoResolutionMock, getName())
-        .WillByDefault(::testing::ReturnRef(videoPortSupportedResolution));
-    ON_CALL(*p_videoOutputPortTypeMock, getSupportedResolutions())
-        .WillByDefault(::testing::Return(device::List<device::VideoResolution>({ videoResolution })));
-    ON_CALL(*p_videoOutputPortTypeMock, getId())
-        .WillByDefault(::testing::Return(0));
-    ON_CALL(*p_videoOutputPortMock, getType())
-        .WillByDefault(::testing::ReturnRef(videoOutputPortType));
-    ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-        .WillByDefault(::testing::Return(videoPort));
-    ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
-        .WillByDefault(::testing::ReturnRef(videoOutputPort));
-    ON_CALL(*p_videoOutputPortConfigImplMock, getPortType(::testing::_))
-        .WillByDefault(::testing::ReturnRef(videoOutputPortType));
-
+    // Default config (fixture) already has HDMI0's type supporting "1080p".
+    // NOTE: SupportedResolutions() also declares a "success" @out param (see
+    // IDeviceInfo.h) that this test's literal previously omitted.
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedresolutions"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"supportedResolutions\":[\"1080p\"]}"));
+    EXPECT_EQ(response, _T("{\"supportedResolutions\":[\"1080p\"],\"success\":true}"));
 }
 
 TEST_F(DeviceInfoJsonRpcInitializedDsVideoOutputTest, supportedhdcp)
 {
-    device::VideoOutputPort videoOutputPort;
-    string videoPort(_T("HDMI0"));
-
-    ON_CALL(*p_videoOutputPortMock, getHDCPProtocol())
-        .WillByDefault(::testing::Return(dsHDCP_VERSION_2X));
-    ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-        .WillByDefault(::testing::Return(videoPort));
-    ON_CALL(*p_videoOutputPortConfigImplMock, getPort(::testing::_))
-        .WillByDefault(::testing::ReturnRef(videoOutputPort));
+    ON_CALL(DeviceSettingsVideoPortMock::Mock(), GetHDCPProtocolVersionOnVideoPort(::testing::_, ::testing::_))
+        .WillByDefault(::testing::DoAll(
+            ::testing::SetArgReferee<1>(Exchange::IDeviceSettingsVideoPort::DS_HDCP_VERSION_2X),
+            ::testing::Return(Core::ERROR_NONE)));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedhdcp"), _T(""), response));
     EXPECT_EQ(response, _T("{\"supportedHDCPVersion\":\"2.2\"}"));
@@ -412,62 +388,53 @@ TEST_F(DeviceInfoJsonRpcInitializedDsVideoOutputTest, supportedhdcp)
 
 TEST_F(DeviceInfoJsonRpcInitializedDsTest, audiocapabilities)
 {
-        device::AudioOutputPort audioOutputPort;
+    ON_CALL(DeviceSettingsAudioMock::Mock(), GetAudioCapabilities(::testing::_, ::testing::_))
+        .WillByDefault(::testing::DoAll(
+            ::testing::SetArgReferee<1>(Exchange::IDeviceSettingsAudio::AUDIO_CAPS_ATMOS |
+                                         Exchange::IDeviceSettingsAudio::AUDIO_CAPS_DOLBY_DIGITAL |
+                                         Exchange::IDeviceSettingsAudio::AUDIO_CAPS_DOLBY_DIGITAL_PLUS |
+                                         Exchange::IDeviceSettingsAudio::AUDIO_CAPS_DIGITAL_AUDIO_DELIVERY |
+                                         Exchange::IDeviceSettingsAudio::AUDIO_CAPS_DIGITAL_AUDIO_PROCESS_V2 |
+                                         Exchange::IDeviceSettingsAudio::AUDIO_CAPS_MS12),
+            ::testing::Return(Core::ERROR_NONE)));
 
-    string audioPort(_T("HDMI0"));
-
-    ON_CALL(*p_audioOutputPortMock, getAudioCapabilities(::testing::_))
-        .WillByDefault(::testing::Invoke(
-            [&](int* capabilities) {
-                ASSERT_TRUE(capabilities != nullptr);
-                EXPECT_EQ(*capabilities, dsAUDIOSUPPORT_NONE);
-                *capabilities = dsAUDIOSUPPORT_ATMOS | dsAUDIOSUPPORT_DD | dsAUDIOSUPPORT_DDPLUS | dsAUDIOSUPPORT_DAD | dsAUDIOSUPPORT_DAPv2 | dsAUDIOSUPPORT_MS12;
-            }));
-    ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-        .WillByDefault(::testing::Return(audioPort));
-    ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-        .WillByDefault(::testing::ReturnRef(audioOutputPort));
-
+    // NOTE: this method is @deprecated (see IDeviceInfo.h); the expected literal
+    // below matches IDeviceAudioCapabilities.h's actual @text tags for
+    // AudioCapability (underscore-separated multi-word values, e.g.
+    // "DOLBY_DIGITAL"/"Dual_Audio_Decode") and includes the "success" field the
+    // interface declares — this test previously expected a stale, pre-@text
+    // literal ("DOLBY DIGITAL" with a space, no "success" field) that never
+    // matched the generated JSON-RPC contract.
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("audiocapabilities"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"AudioCapabilities\":[\"ATMOS\",\"DOLBY DIGITAL\",\"DOLBY DIGITAL PLUS\",\"Dual Audio Decode\",\"DAPv2\",\"MS12\"]}"));
+    EXPECT_EQ(response, _T("{\"AudioCapabilities\":[\"ATMOS\",\"DOLBY_DIGITAL\",\"DOLBY_DIGITAL_PLUS\",\"Dual_Audio_Decode\",\"DAPv2\",\"MS12\"],\"success\":true}"));
 }
 
 TEST_F(DeviceInfoJsonRpcInitializedDsTest, ms12capabilities)
 {
-        device::AudioOutputPort audioOutputPort;
+    ON_CALL(DeviceSettingsAudioMock::Mock(), GetAudioMS12Capabilities(::testing::_, ::testing::_))
+        .WillByDefault(::testing::DoAll(
+            ::testing::SetArgReferee<1>(Exchange::IDeviceSettingsAudio::AUDIO_MS12_CAPABILITIES_DOLBYVOLUME |
+                                         Exchange::IDeviceSettingsAudio::AUDIO_MS12_CAPABILITIES_INTELLIGENT_EQUALIZER |
+                                         Exchange::IDeviceSettingsAudio::AUDIO_MS12_CAPABILITIES_DIALOG_ENHANCER),
+            ::testing::Return(Core::ERROR_NONE)));
 
-    string audioPort(_T("HDMI0"));
-
-    ON_CALL(*p_audioOutputPortMock, getMS12Capabilities(::testing::_))
-        .WillByDefault(::testing::Invoke(
-            [&](int* capabilities) {
-                ASSERT_TRUE(capabilities != nullptr);
-                EXPECT_EQ(*capabilities, dsMS12SUPPORT_NONE);
-                *capabilities = dsMS12SUPPORT_DolbyVolume | dsMS12SUPPORT_InteligentEqualizer | dsMS12SUPPORT_DialogueEnhancer;
-            }));
-    ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-        .WillByDefault(::testing::Return(audioPort));
-    ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-        .WillByDefault(::testing::ReturnRef(audioOutputPort));
-
+    // See the "audiocapabilities" test above re: the corrected @text literal.
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("ms12capabilities"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"MS12Capabilities\":[\"Dolby Volume\",\"Inteligent Equalizer\",\"Dialogue Enhancer\"]}"));
+    EXPECT_EQ(response, _T("{\"MS12Capabilities\":[\"Dolby_Volume\",\"Inteligent_Equalizer\",\"Dialogue_Enhancer\"],\"success\":true}"));
 }
 
 TEST_F(DeviceInfoJsonRpcInitializedDsTest, supportedms12audioprofiles)
 {
-        device::AudioOutputPort audioOutputPort;
-
-    string audioPort(_T("HDMI0"));
-    string audioPortMS12AudioProfile(_T("Movie"));
-
-    ON_CALL(*p_audioOutputPortMock, getMS12AudioProfileList())
-        .WillByDefault(::testing::Return(std::vector<std::string>({ audioPortMS12AudioProfile })));
-    ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-        .WillByDefault(::testing::Return(audioPort));
-    ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-        .WillByDefault(::testing::ReturnRef(audioOutputPort));
+    ON_CALL(DeviceSettingsAudioMock::Mock(), GetAudioMS12ProfileList(::testing::_, ::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [](const int32_t, Exchange::IDeviceSettingsAudio::IDeviceSettingsAudioMS12AudioProfileIterator*& iter) -> Core::hresult {
+                Exchange::IDeviceSettingsAudio::MS12AudioProfile entry;
+                entry.audioProfile = "Movie";
+                std::list<Exchange::IDeviceSettingsAudio::MS12AudioProfile> list{ entry };
+                iter = (Core::Service<RPC::IteratorType<Exchange::IDeviceSettingsAudio::IDeviceSettingsAudioMS12AudioProfileIterator>>::Create<Exchange::IDeviceSettingsAudio::IDeviceSettingsAudioMS12AudioProfileIterator>(list));
+                return Core::ERROR_NONE;
+            }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedms12audioprofiles"), _T(""), response));
-    EXPECT_EQ(response, _T("{\"supportedMS12AudioProfiles\":[\"Movie\"]}"));
+    EXPECT_EQ(response, _T("{\"supportedMS12AudioProfiles\":[\"Movie\"],\"success\":true}"));
 }

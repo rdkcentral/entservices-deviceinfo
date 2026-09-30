@@ -23,15 +23,8 @@
 #include "DeviceInfoImplementation.h"
 #include "DeviceAudioCapabilities.h"
 #include "DeviceVideoCapabilities.h"
-#include "AudioOutputPortMock.h"
-#include "HostMock.h"
 #include "IarmBusMock.h"
-#include "ManagerMock.h"
 #include "ServiceMock.h"
-#include "VideoOutputPortConfigMock.h"
-#include "VideoOutputPortMock.h"
-#include "VideoOutputPortTypeMock.h"
-#include "VideoResolutionMock.h"
 #include "RfcApiMock.h"
 #include "COMLinkMock.h"
 #include "DeviceInfoMock.h"
@@ -75,13 +68,6 @@ protected:
     string response;
 
     IarmBusImplMock* p_iarmBusImplMock = nullptr;
-    ManagerImplMock* p_managerImplMock = nullptr;
-    HostImplMock* p_hostImplMock = nullptr;
-    AudioOutputPortMock* p_audioOutputPortMock = nullptr;
-    VideoResolutionMock* p_videoResolutionMock = nullptr;
-    VideoOutputPortMock* p_videoOutputPortMock = nullptr;
-    VideoOutputPortConfigImplMock* p_videoOutputPortConfigImplMock = nullptr;
-    VideoOutputPortTypeMock* p_videoOutputPortTypeMock = nullptr;
     RfcApiImplMock* p_rfcApiImplMock = nullptr;
     NiceMock<ServiceMock> service;
     NiceMock<COMLinkMock> comLinkMock;
@@ -117,27 +103,6 @@ protected:
 
         p_iarmBusImplMock = new NiceMock<IarmBusImplMock>;
         IarmBus::setImpl(p_iarmBusImplMock);
-
-        p_managerImplMock = new NiceMock<ManagerImplMock>;
-        device::Manager::setImpl(p_managerImplMock);
-
-        p_hostImplMock = new NiceMock<HostImplMock>;
-        device::Host::setImpl(p_hostImplMock);
-
-        p_audioOutputPortMock = new NiceMock<AudioOutputPortMock>;
-        device::AudioOutputPort::setImpl(p_audioOutputPortMock);
-
-        p_videoResolutionMock = new NiceMock<VideoResolutionMock>;
-        device::VideoResolution::setImpl(p_videoResolutionMock);
-
-        p_videoOutputPortMock = new NiceMock<VideoOutputPortMock>;
-        device::VideoOutputPort::setImpl(p_videoOutputPortMock);
-
-        p_videoOutputPortConfigImplMock = new NiceMock<VideoOutputPortConfigImplMock>;
-        device::VideoOutputPortConfig::setImpl(p_videoOutputPortConfigImplMock);
-
-        p_videoOutputPortTypeMock = new NiceMock<VideoOutputPortTypeMock>;
-        device::VideoOutputPortType::setImpl(p_videoOutputPortTypeMock);
 
         p_rfcApiImplMock = new NiceMock<RfcApiImplMock>;
         RfcApi::setImpl(p_rfcApiImplMock);
@@ -225,6 +190,25 @@ protected:
         // (already-populated) mock registry instead of racing to insert into it.
         (void)DeviceSettingsMock::Get();
 
+        // DeviceInfoImplementation::SupportedAudioPorts() is fully cache-based: it no
+        // longer touches device::Host at all, it reads DSHelper's AudioConfigStore,
+        // which is populated exclusively from IDeviceSettings::GetDeviceSettingConfigs().
+        // Without this default stub, GetDeviceSettingConfigs() is an "uninteresting mock
+        // call" that returns Core::ERROR_NONE with an empty DeviceSettingConfigs, so
+        // LoadAllConfigs() "succeeds" with zero audio ports and SupportedAudioPorts()
+        // fails with ERROR_UNAVAILABLE ("DeviceSettings config not available"). Individual
+        // tests may override this with their own ON_CALL/EXPECT_CALL before invoking the
+        // JSON-RPC method under test (config is loaded lazily, once, on first access).
+        ON_CALL(DeviceSettingsMock::Mock(), GetDeviceSettingConfigs(::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](Exchange::IDeviceSettings::DeviceSettingConfigs& configs) -> Core::hresult {
+                    configs.audioPorts = {
+                        { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_HDMI,  0, 0, 0 },
+                        { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_SPDIF, 0, 0, 0 },
+                    };
+                    return Core::ERROR_NONE;
+                }));
+
         EXPECT_EQ(string(""), plugin->Initialize(&service));
 
         {
@@ -248,48 +232,6 @@ protected:
         if (p_wrapsImplMock != nullptr) {
             delete p_wrapsImplMock;
             p_wrapsImplMock = nullptr;
-        }
-
-        device::VideoOutputPortType::setImpl(nullptr);
-        if (p_videoOutputPortTypeMock != nullptr) {
-            delete p_videoOutputPortTypeMock;
-            p_videoOutputPortTypeMock = nullptr;
-        }
-
-        device::VideoOutputPortConfig::setImpl(nullptr);
-        if (p_videoOutputPortConfigImplMock != nullptr) {
-            delete p_videoOutputPortConfigImplMock;
-            p_videoOutputPortConfigImplMock = nullptr;
-        }
-
-        device::VideoOutputPort::setImpl(nullptr);
-        if (p_videoOutputPortMock != nullptr) {
-            delete p_videoOutputPortMock;
-            p_videoOutputPortMock = nullptr;
-        }
-
-        device::VideoResolution::setImpl(nullptr);
-        if (p_videoResolutionMock != nullptr) {
-            delete p_videoResolutionMock;
-            p_videoResolutionMock = nullptr;
-        }
-
-        device::AudioOutputPort::setImpl(nullptr);
-        if (p_audioOutputPortMock != nullptr) {
-            delete p_audioOutputPortMock;
-            p_audioOutputPortMock = nullptr;
-        }
-
-        device::Host::setImpl(nullptr);
-        if (p_hostImplMock != nullptr) {
-            delete p_hostImplMock;
-            p_hostImplMock = nullptr;
-        }
-
-        device::Manager::setImpl(nullptr);
-        if (p_managerImplMock != nullptr) {
-            delete p_managerImplMock;
-            p_managerImplMock = nullptr;
         }
 
         IarmBus::setImpl(nullptr);
@@ -808,57 +750,70 @@ TEST_F(DeviceInfoTest, Addresses_Success)
     EXPECT_TRUE(response.find("\"mac\":") != string::npos);
 }
 
+// =========== SupportedAudioPorts ===========
+//
+// DeviceInfoImplementation::SupportedAudioPorts() was refactored to read from
+// DSHelper's cached AudioConfigStore (populated once, lazily, from
+// IDeviceSettings::GetDeviceSettingConfigs()) instead of calling
+// device::Host::getAudioOutputPorts()/device::AudioOutputPort::getName() directly.
+// These tests therefore stub DeviceSettingsMock's GetDeviceSettingConfigs() (the
+// COM-RPC boundary) rather than the legacy device:: HAL mocks, mirroring the
+// pattern already used in test_DeviceAudioCapabilities.cpp / test_FrameRate.cpp.
+// The old HAL-exception-injection tests no longer apply: there is now a single
+// failure surface (the GetDeviceSettingConfigs COM-RPC call itself failing/being
+// unavailable), which SupportedAudioPorts() reports as Core::ERROR_UNAVAILABLE.
+
 TEST_F(DeviceInfoTest, SupportedAudioPorts_Success)
 {
-    device::List<device::AudioOutputPort> audioPorts;
-    device::AudioOutputPort port1, port2;
-    static const string portName1 = "HDMI0";
-    static const string portName2 = "SPDIF";
-
-    EXPECT_CALL(*p_audioOutputPortMock, getName())
-        .WillOnce(ReturnRef(portName1))
-        .WillOnce(ReturnRef(portName2));
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([&]() {
-            audioPorts.push_back(port1);
-            audioPorts.push_back(port2);
-            return audioPorts;
-        }));
+    ON_CALL(DeviceSettingsMock::Mock(), GetDeviceSettingConfigs(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [](Exchange::IDeviceSettings::DeviceSettingConfigs& configs) -> Core::hresult {
+                configs.audioPorts = {
+                    { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_HDMI,  0, 0, 0 },
+                    { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_SPDIF, 0, 0, 0 },
+                };
+                return Core::ERROR_NONE;
+            }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
     EXPECT_TRUE(response.find("\"supportedAudioPorts\":[") != string::npos);
+    EXPECT_TRUE(response.find("\"HDMI0\"") != string::npos);
+    EXPECT_TRUE(response.find("\"SPDIF0\"") != string::npos);
     EXPECT_TRUE(response.find("\"success\":true") != string::npos);
 }
 
 TEST_F(DeviceInfoTest, SupportedAudioPorts_Exception_DeviceException)
 {
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([]() -> device::List<device::AudioOutputPort> {
-            throw device::Exception("Test exception");
-        }));
+    // No COM-RPC equivalent of a HAL-side device::Exception exists any more: the
+    // closest analogous failure at the new COM-RPC boundary is the DeviceSettings
+    // service itself reporting a failure from GetDeviceSettingConfigs().
+    ON_CALL(DeviceSettingsMock::Mock(), GetDeviceSettingConfigs(::testing::_))
+        .WillByDefault(::testing::Return(Core::ERROR_GENERAL));
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
+    EXPECT_EQ(Core::ERROR_UNAVAILABLE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
 }
 
 TEST_F(DeviceInfoTest, SupportedAudioPorts_Exception_StdException)
 {
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([]() -> device::List<device::AudioOutputPort> {
-            throw std::runtime_error("Test exception");
-        }));
+    // Same underlying failure surface as *_Exception_DeviceException above: the
+    // COM-RPC call reports no audio ports available.
+    ON_CALL(DeviceSettingsMock::Mock(), GetDeviceSettingConfigs(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [](Exchange::IDeviceSettings::DeviceSettingConfigs& configs) -> Core::hresult {
+                configs.audioPorts.clear();
+                return Core::ERROR_NONE;
+            }));
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
+    EXPECT_EQ(Core::ERROR_UNAVAILABLE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
 }
 
 TEST_F(DeviceInfoTest, SupportedAudioPorts_Exception_UnknownException)
 {
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([]() -> device::List<device::AudioOutputPort> {
-            throw 42;
-        }));
+    // Same underlying failure surface: DeviceSettings COM-RPC unavailable/erroring.
+    ON_CALL(DeviceSettingsMock::Mock(), GetDeviceSettingConfigs(::testing::_))
+        .WillByDefault(::testing::Return(Core::ERROR_GENERAL));
 
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
+    EXPECT_EQ(Core::ERROR_UNAVAILABLE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
 }
 
 // =========== Additional Negative Tests ===========
@@ -1063,35 +1018,37 @@ TEST_F(DeviceInfoTest, FirmwareVersion_Negative_MalformedVersionFile)
 
 TEST_F(DeviceInfoTest, SupportedAudioPorts_Negative_GetNameThrowsException)
 {
-    device::List<device::AudioOutputPort> audioPorts;
-    device::AudioOutputPort port1;
+    // getAudioPortName() (DSHelper) is a pure switch-on-enum helper that cannot
+    // throw; the equivalent robustness scenario in the new architecture is an
+    // audio port type the switch doesn't recognize. It must still resolve (via
+    // the "default: AUDIO<index>" case) instead of failing the whole call.
+    ON_CALL(DeviceSettingsMock::Mock(), GetDeviceSettingConfigs(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [](Exchange::IDeviceSettings::DeviceSettingConfigs& configs) -> Core::hresult {
+                configs.audioPorts = {
+                    { static_cast<Exchange::IDeviceSettingsAudio::AudioPortType>(9999), 0, 0, 0 },
+                };
+                return Core::ERROR_NONE;
+            }));
 
-    EXPECT_CALL(*p_audioOutputPortMock, getName())
-        .WillOnce(Invoke([]() -> const string& {
-            throw device::Exception("getName exception");
-            static const string portName = "HDMI0";
-            return portName;
-        }));
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([&]() {
-            audioPorts.push_back(port1);
-            return audioPorts;
-        }));
-
-    EXPECT_EQ(Core::ERROR_GENERAL, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-    EXPECT_TRUE(response.empty());
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
+    EXPECT_TRUE(response.find("\"supportedAudioPorts\":[") != string::npos);
 }
 
 TEST_F(DeviceInfoTest, SupportedAudioPorts_Negative_EmptyPortList)
 {
-    device::List<device::AudioOutputPort> audioPorts;
+    // GetDeviceSettingConfigs() succeeds but reports zero audio ports. Since
+    // DSHelper::getAudioPortEntries() treats "no entries" as "config not
+    // available" (it returns false on an empty list), SupportedAudioPorts()
+    // reports ERROR_UNAVAILABLE rather than an empty success array.
+    ON_CALL(DeviceSettingsMock::Mock(), GetDeviceSettingConfigs(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [](Exchange::IDeviceSettings::DeviceSettingConfigs& configs) -> Core::hresult {
+                configs.audioPorts.clear();
+                return Core::ERROR_NONE;
+            }));
 
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Return(audioPorts));
-
-    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
-    EXPECT_TRUE(response.find("\"supportedAudioPorts\":[]") != string::npos);
+    EXPECT_EQ(Core::ERROR_UNAVAILABLE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
 }
 
 // =========== Additional Comprehensive Positive Tests ===========
@@ -1259,45 +1216,33 @@ TEST_F(DeviceInfoTest, Addresses_Positive_HasRequiredFields)
 
 TEST_F(DeviceInfoTest, SupportedAudioPorts_Positive_MultiplePortTypes)
 {
-    device::List<device::AudioOutputPort> audioPorts;
-    device::AudioOutputPort port1, port2, port3;
-    static const string portName1 = "HDMI0";
-    static const string portName2 = "SPDIF";
-    static const string portName3 = "SPEAKER";
-
-    EXPECT_CALL(*p_audioOutputPortMock, getName())
-        .WillOnce(ReturnRef(portName1))
-        .WillOnce(ReturnRef(portName2))
-        .WillOnce(ReturnRef(portName3));
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([&]() {
-            audioPorts.push_back(port1);
-            audioPorts.push_back(port2);
-            audioPorts.push_back(port3);
-            return audioPorts;
-        }));
+    ON_CALL(DeviceSettingsMock::Mock(), GetDeviceSettingConfigs(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [](Exchange::IDeviceSettings::DeviceSettingConfigs& configs) -> Core::hresult {
+                configs.audioPorts = {
+                    { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_HDMI,    0, 0, 0 },
+                    { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_SPDIF,   0, 0, 0 },
+                    { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_SPEAKER, 0, 0, 0 },
+                };
+                return Core::ERROR_NONE;
+            }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
     EXPECT_TRUE(response.find("\"HDMI0\"") != string::npos);
-    EXPECT_TRUE(response.find("\"SPDIF\"") != string::npos);
-    EXPECT_TRUE(response.find("\"SPEAKER\"") != string::npos);
+    EXPECT_TRUE(response.find("\"SPDIF0\"") != string::npos);
+    EXPECT_TRUE(response.find("\"SPEAKER0\"") != string::npos);
 }
 
 TEST_F(DeviceInfoTest, SupportedAudioPorts_Positive_SinglePort)
 {
-    device::List<device::AudioOutputPort> audioPorts;
-    device::AudioOutputPort port1;
-    static const string portName = "HDMI0";
-
-    EXPECT_CALL(*p_audioOutputPortMock, getName())
-        .WillOnce(ReturnRef(portName));
-
-    EXPECT_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillOnce(Invoke([&]() {
-            audioPorts.push_back(port1);
-            return audioPorts;
-        }));
+    ON_CALL(DeviceSettingsMock::Mock(), GetDeviceSettingConfigs(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [](Exchange::IDeviceSettings::DeviceSettingConfigs& configs) -> Core::hresult {
+                configs.audioPorts = {
+                    { Exchange::IDeviceSettingsAudio::AUDIO_PORT_TYPE_HDMI, 0, 0, 0 },
+                };
+                return Core::ERROR_NONE;
+            }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("supportedaudioports"), _T(""), response));
     EXPECT_TRUE(response.find("\"supportedAudioPorts\":[") != string::npos);
