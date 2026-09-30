@@ -22,10 +22,6 @@ set(THUNDER_PORT 9998)
 
 find_package(${NAMESPACE}Plugins REQUIRED)
 
-# Note: DeviceInfo does not have L2 tests in this repository.
-# L2 test execution is disabled in CI via RDK_SERVICE_L2_TEST=OFF.
-# This CMakeLists.txt is retained for repository structure consistency.
-
 if(PLUGIN_DEVICEINFO)
     set(SRC_FILES ${SRC_FILES} tests/DeviceInfo_L2Test.cpp)
 endif()
@@ -61,6 +57,23 @@ if (MOCKACCESSOR_LIBRARIES)
 else (MOCKACCESSOR_LIBRARIES)
      message ("Require ${MOCKACCESSOR_LIBRARIES} library")
 endif (MOCKACCESSOR_LIBRARIES)
+
+# GTest-controllable stand-in for libds-hal (see Ds*HalMock.h) — the real
+# org.rdk.DeviceSettings plugin (built separately, see .github/workflows/L2-tests.yml)
+# links against this instead of real hardware HAL. DeviceInfo_L2Test.cpp only ever
+# touches the HAL mock *classes* (ON_CALL/EXPECT_CALL on Ds<Component>HalMock methods,
+# fully inline via MOCK_METHOD) and never calls an actual out-of-line ds-hal.so symbol
+# directly, so the linker's --as-needed default would otherwise silently drop this
+# DT_NEEDED entry and libWPEFrameworkL2Tests.so would fail to *load* at runtime with
+# "undefined symbol: Ds<Component>Api::setImpl" — see the migration prompt's CMake
+# checklist for this exact failure mode.
+find_library(DSHAL_LIBRARIES NAMES ds-hal)
+if (DSHAL_LIBRARIES)
+    message ("Found ds-hal library - ${DSHAL_LIBRARIES}")
+    target_link_libraries(${MODULE_NAME} PRIVATE -Wl,--no-as-needed ${DSHAL_LIBRARIES} -Wl,--as-needed)
+else (DSHAL_LIBRARIES)
+     message ("Require ${DSHAL_LIBRARIES} library")
+endif (DSHAL_LIBRARIES)
 
 target_include_directories(
     ${MODULE_NAME} PRIVATE ./
