@@ -32,6 +32,7 @@
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 #include "ThunderPortability.h"
 
@@ -125,6 +126,9 @@ protected:
             deviceSettingsCondition.wait_for(
                 lock, std::chrono::seconds(5), [this]() { return deviceSettingsActivated; });
         }
+
+        // Bound-delay for the async OnDeviceSettingsActivated() job (see prompt.md).
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
     }
     virtual ~DeviceInfoJsonRpcInitializedTest() override
     {
