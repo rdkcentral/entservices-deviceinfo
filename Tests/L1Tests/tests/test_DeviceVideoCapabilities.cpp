@@ -88,12 +88,43 @@ namespace {
     const string webPrefix = _T("/Service/DeviceInfo");
 }
 
+// OnDeviceSettingsActivated() runs via the WorkerPool's async job — the mock
+// Register()/Activated() callback returning only confirms the notification was
+// dispatched, not that DSHelper's internal config-store reset has actually run
+// yet. Waiting on that instead of the notification callback closes a real race
+// where a test's SetVideoPortConfig() + handler.Invoke() could still observe a
+// previous test's cached config. Mirrors entservices-framerate's
+// TestableFrameRateImplementation pattern.
+class TestableDeviceVideoCapabilities : public Plugin::DeviceVideoCapabilities {
+public:
+    void OnDeviceSettingsActivated() override
+    {
+        Plugin::DeviceVideoCapabilities::OnDeviceSettingsActivated();
+        {
+            std::lock_guard<std::mutex> lock(_activationMutex);
+            _activated = true;
+        }
+        _activationCv.notify_all();
+    }
+
+    void WaitForActivation()
+    {
+        std::unique_lock<std::mutex> lock(_activationMutex);
+        _activationCv.wait_for(lock, std::chrono::seconds(5), [this]() { return _activated; });
+    }
+
+private:
+    std::mutex _activationMutex;
+    std::condition_variable _activationCv;
+    bool _activated = false;
+};
+
 class DeviceVideoCapabilitiesTest : public ::testing::Test {
 protected:
     Core::ProxyType<Plugin::DeviceInfo> plugin;
     Core::ProxyType<Plugin::DeviceInfoImplementation> deviceInfoImplementation;
     Core::ProxyType<Plugin::DeviceAudioCapabilities> deviceAudioCapabilities;
-    Core::ProxyType<Plugin::DeviceVideoCapabilities> deviceVideoCapabilities;
+    Core::ProxyType<TestableDeviceVideoCapabilities> deviceVideoCapabilities;
     Core::JSONRPC::Handler& handler;
     DECL_CORE_JSONRPC_CONX connection;
     string response;
@@ -139,7 +170,7 @@ protected:
 
         deviceInfoImplementation = Core::ProxyType<Plugin::DeviceInfoImplementation>::Create();
         deviceAudioCapabilities = Core::ProxyType<Plugin::DeviceAudioCapabilities>::Create();
-        deviceVideoCapabilities = Core::ProxyType<Plugin::DeviceVideoCapabilities>::Create();
+        deviceVideoCapabilities = Core::ProxyType<TestableDeviceVideoCapabilities>::Create();
 
         ON_CALL(service, ConfigLine())
             .WillByDefault(Return("{\"root\":{\"mode\":\"Off\"}}"));
@@ -221,9 +252,13 @@ protected:
         // Tests override via SetVideoPortConfig()/ON_CALL(...) before invoking
         // the JSON-RPC method under test (DSHelper loads config lazily, once,
         // on the first accessor call per test).
+        // supportedResolutionNames is a per-TYPE property in the real config schema
+        // (SetVideoPortConfig's map keys videoPortTypes by type, not by port index) —
+        // ports sharing a type must use the same resolution list, only
+        // defaultResolution legitimately varies per port.
         SetVideoPortConfig({
             { Exchange::IDeviceSettingsVideoPort::DS_VIDEO_PORT_TYPE_HDMI, 0, "1080p", "480p,720p,1080p,2160p" },
-            { Exchange::IDeviceSettingsVideoPort::DS_VIDEO_PORT_TYPE_HDMI, 1, "720p",  "480p,720p,1080p" },
+            { Exchange::IDeviceSettingsVideoPort::DS_VIDEO_PORT_TYPE_HDMI, 1, "720p",  "480p,720p,1080p,2160p" },
         });
 
         // SupportedHdcp() additionally needs a per-port COM-RPC handle (acquired
@@ -248,6 +283,11 @@ protected:
             deviceSettingsCondition.wait_for(
                 lock, std::chrono::seconds(5), [this]() { return deviceSettingsActivated; });
         }
+
+        // See TestableDeviceVideoCapabilities: wait for DSHelper's own async
+        // activation handler to actually run, not just for the mock notification
+        // to have been dispatched.
+        deviceVideoCapabilities->WaitForActivation();
     }
 
     virtual ~DeviceVideoCapabilitiesTest()
@@ -850,13 +890,22 @@ TEST_F(DeviceVideoCapabilitiesTest, SupportedVideoDisplays_Positive_VariousPortT
 
 TEST_F(DeviceVideoCapabilitiesTest, DefaultResolution_Positive_VariousResolutions)
 {
+    // Config loads once per test (lazily, on the first accessor call) and is then
+    // cached, so re-calling SetVideoPortConfig() mid-test does NOT trigger a
+    // reload — verify multiple distinct resolutions via separate port indices
+    // configured up front in a single call, not by looping SetVideoPortConfig().
     static const char* const resolutions[] = { "1080p", "720p", "2160p", "480i" };
-    for (const char* res : resolutions) {
-        SetVideoPortConfig({
-            { Exchange::IDeviceSettingsVideoPort::DS_VIDEO_PORT_TYPE_HDMI, 0, res, res },
-        });
-        EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("defaultresolution"), _T("{\"videoDisplay\":\"HDMI0\"}"), response));
-        EXPECT_TRUE(response.find(string("\"") + res + "\"") != string::npos);
+    SetVideoPortConfig({
+        { Exchange::IDeviceSettingsVideoPort::DS_VIDEO_PORT_TYPE_HDMI, 0, resolutions[0], resolutions[0] },
+        { Exchange::IDeviceSettingsVideoPort::DS_VIDEO_PORT_TYPE_HDMI, 1, resolutions[1], resolutions[1] },
+        { Exchange::IDeviceSettingsVideoPort::DS_VIDEO_PORT_TYPE_HDMI, 2, resolutions[2], resolutions[2] },
+        { Exchange::IDeviceSettingsVideoPort::DS_VIDEO_PORT_TYPE_HDMI, 3, resolutions[3], resolutions[3] },
+    });
+
+    for (int32_t index = 0; index < 4; ++index) {
+        const string videoDisplay = string("HDMI") + std::to_string(index);
+        EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("defaultresolution"), _T("{\"videoDisplay\":\"") + videoDisplay + _T("\"}"), response));
+        EXPECT_TRUE(response.find(string("\"") + resolutions[index] + "\"") != string::npos);
     }
 }
 
