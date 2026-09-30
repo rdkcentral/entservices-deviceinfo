@@ -109,13 +109,9 @@ namespace Plugin {
             }
             if (actualLen == 0) actualLen = kEdidBufLen; // safety: keep full buffer
 
-            if (actualLen > static_cast<size_t>(std::numeric_limits<uint16_t>::max())) {
-                result = Core::ERROR_GENERAL;
-            } else {
-                string base64String;
-                Core::ToString(edidBuf.data(), static_cast<uint16_t>(actualLen), true, base64String);
-                hostEdid.EDID = std::move(base64String);
-            }
+            string base64String;
+            Core::ToString(edidBuf.data(), static_cast<uint16_t>(actualLen), true, base64String);
+            hostEdid.EDID = std::move(base64String);
         }
 
         return result;
@@ -127,11 +123,11 @@ namespace Plugin {
 
         // Read from cached config via DSHelper — no COM-RPC round-trip needed
         const string portName = videoDisplay.empty() ? DSHelper::getDefaultVideoPortName() : videoDisplay;
-        const string res = DSHelper::getVideoPortDefaultResolution(portName);
+        string res = DSHelper::getVideoPortDefaultResolution(portName);
         if (res.empty()) {
             result = Core::ERROR_NOT_EXIST;
         } else {
-            defaultResln.defaultResolution = res;
+            defaultResln.defaultResolution = std::move(res);
         }
 
         return result;

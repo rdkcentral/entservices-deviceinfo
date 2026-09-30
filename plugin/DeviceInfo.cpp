@@ -102,14 +102,20 @@ namespace WPEFramework
             {
                 auto* audioConfigure = _deviceAudioCapabilities->QueryInterface<Exchange::IConfiguration>();
                 if (audioConfigure != nullptr) {
-                    audioConfigure->Configure(_service);
+                    uint32_t audioResult = audioConfigure->Configure(_service);
+                    if (audioResult != Core::ERROR_NONE) {
+                        SYSLOG(Logging::Startup, (_T("DeviceAudioCapabilities could not be configured")));
+                    }
                     audioConfigure->Release();
                 }
             }
             {
                 auto* videoConfigure = _deviceVideoCapabilities->QueryInterface<Exchange::IConfiguration>();
                 if (videoConfigure != nullptr) {
-                    videoConfigure->Configure(_service);
+                    uint32_t videoResult = videoConfigure->Configure(_service);
+                    if (videoResult != Core::ERROR_NONE) {
+                        SYSLOG(Logging::Startup, (_T("DeviceVideoCapabilities could not be configured")));
+                    }
                     videoConfigure->Release();
                 }
             }
