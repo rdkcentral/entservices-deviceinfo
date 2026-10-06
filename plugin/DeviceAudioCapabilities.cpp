@@ -21,6 +21,9 @@
 
 #include "DeviceSettingsInterface.h"
 
+#include <list>
+#include <vector>
+
 namespace WPEFramework {
 namespace Plugin {
 
@@ -66,9 +69,12 @@ namespace Plugin {
             LOGERR("AudioCapabilities: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
+        const std::string portName = audioPort.empty()
+            ? DSHelper::getDefaultAudioPortName()
+            : audioPort;
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
-            if (audioPort.empty() || entries[i].name == audioPort) {
+            if (entries[i].name == portName) {
                 portEntry = &entries[i];
             }
         }
@@ -127,9 +133,12 @@ namespace Plugin {
             LOGERR("MS12Capabilities: DeviceSettings config not available");
             return Core::ERROR_UNAVAILABLE;
         }
+        const std::string portName = audioPort.empty()
+            ? DSHelper::getDefaultAudioPortName()
+            : audioPort;
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
-            if (audioPort.empty() || entries[i].name == audioPort) {
+            if (entries[i].name == portName) {
                 portEntry = &entries[i];
             }
         }
@@ -190,10 +199,6 @@ namespace Plugin {
         const std::string resolvedPort = audioPort.empty()
             ? DSHelper::getDefaultAudioPortName()
             : audioPort;
-        if (audioPort.empty()) {
-            LOGINFO("SupportedMS12AudioProfiles: audioPort empty — resolved default to '%s'",
-                    resolvedPort.c_str());
-        }
         const AudioPortEntry* portEntry = nullptr;
         for (size_t i = 0; i < entries.size() && portEntry == nullptr; ++i) {
             if (entries[i].name == resolvedPort) {

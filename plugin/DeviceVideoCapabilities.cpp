@@ -21,7 +21,11 @@
 
 #include "DeviceSettingsInterface.h"
 #include <interfaces/IDeviceSettingsHost.h>    // Exchange::IDeviceSettingsHost (GetEDID)
+#include <algorithm>
+#include <limits>
+#include <list>
 #include <sstream>
+#include <vector>
 
 namespace WPEFramework {
 namespace Plugin {
