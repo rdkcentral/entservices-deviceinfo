@@ -72,7 +72,7 @@ cd "$GITHUB_WORKSPACE"
 # build actually needs them any more (it doesn't — see the "rdk/ds"/
 # "devicesettings.h" removal below). Keep this in sync with L1-tests.yml/
 # L2-tests.yml's entservices-testframework ref.
-git clone --branch feature/RDKEMW-25013 https://github.com/rdkcentral/entservices-testframework.git
+git clone --branch develop https://github.com/rdkcentral/entservices-testframework.git
 
 ############################
 # Build Thunder-Tools
