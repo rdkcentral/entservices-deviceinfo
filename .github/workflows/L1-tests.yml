@@ -144,6 +144,12 @@ jobs:
           path: googletest
           ref: v1.15.0
 
+      - name: Apply ProxyStubGenerator project-dir patch
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cd "$GITHUB_WORKSPACE/ThunderTools"
+          patch -p1 < "$GITHUB_WORKSPACE/entservices-testframework/patches/00010-R4.4-Add-support-for-project-dir.patch"
+
       - name: Build ThunderTools
         if: steps.cache.outputs.cache-hit != 'true'
         run: >

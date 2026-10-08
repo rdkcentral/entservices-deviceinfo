@@ -72,8 +72,8 @@ git clone --branch 2.1.0 https://github.com/rdkcentral/entservices-testframework
 echo "======================================================================================"
 echo "buliding thunderTools"
 cd ThunderTools
+patch -p1 < "$GITHUB_WORKSPACE/entservices-testframework/patches/00010-R4.4-Add-support-for-project-dir.patch"
 cd -
-
 
 cmake -G Ninja -S ThunderTools -B build/ThunderTools \
     -DEXCEPTIONS_ENABLE=ON \
