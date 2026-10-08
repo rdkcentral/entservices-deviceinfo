@@ -65,14 +65,7 @@ cd ..
 git clone --branch develop https://github.com/rdkcentral/entservices-helpers.git
 cd "$GITHUB_WORKSPACE"
 
-# Track the active branch tip, not a frozen release tag: entservices-testframework
-# is co-developed alongside the COM-RPC DeviceSettings migration, and an old tag
-# (e.g. 2.0.0) still has the deleted-elsewhere legacy libds mocks
-# (Tests/mocks/devicesettings.h etc.) present, silently masking whether this
-# build actually needs them any more (it doesn't — see the "rdk/ds"/
-# "devicesettings.h" removal below). Keep this in sync with L1-tests.yml/
-# L2-tests.yml's entservices-testframework ref.
-git clone --branch develop https://github.com/rdkcentral/entservices-testframework.git
+git clone --branch 2.1.0 https://github.com/rdkcentral/entservices-testframework.git
 
 ############################
 # Build Thunder-Tools
