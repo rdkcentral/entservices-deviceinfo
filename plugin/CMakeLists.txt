@@ -27,7 +27,7 @@ set(PLUGIN_DEVICEINFO_STARTUPORDER "" CACHE STRING "Start-up order for DeviceInf
 find_package(${NAMESPACE}Plugins REQUIRED)
 find_package(${NAMESPACE}Definitions REQUIRED)
 find_package(CompileSettingsDebug CONFIG REQUIRED)
-find_package(${NAMESPACE}Helpers REQUIRED)
+find_package(${NAMESPACE}Helpers CONFIG REQUIRED)
 find_package(RFC)
 find_package(DS)
 find_package(IARMBus)
