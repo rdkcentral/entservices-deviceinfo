@@ -94,6 +94,32 @@ namespace WPEFramework
             {
                 message = _T("DeviceInfo implementation did not provide a configuration interface");
             }
+
+            // The audio and video capability
+            // implementations also inherit IConfiguration (DeviceSettingsClientHelper::Open).
+            // QueryInterface returns nullptr when the interface is absent (legacy build),
+            // so these calls are safe in both macro states.
+            {
+                auto* audioConfigure = _deviceAudioCapabilities->QueryInterface<Exchange::IConfiguration>();
+                if (audioConfigure != nullptr) {
+                    uint32_t audioResult = audioConfigure->Configure(_service);
+                    if (audioResult != Core::ERROR_NONE) {
+                        SYSLOG(Logging::Startup, (_T("DeviceAudioCapabilities could not be configured")));
+                    }
+                    audioConfigure->Release();
+                }
+            }
+            {
+                auto* videoConfigure = _deviceVideoCapabilities->QueryInterface<Exchange::IConfiguration>();
+                if (videoConfigure != nullptr) {
+                    uint32_t videoResult = videoConfigure->Configure(_service);
+                    if (videoResult != Core::ERROR_NONE) {
+                        SYSLOG(Logging::Startup, (_T("DeviceVideoCapabilities could not be configured")));
+                    }
+                    videoConfigure->Release();
+                }
+            }
+
             // Invoking Plugin API register to wpeframework
             Exchange::JDeviceInfo::Register(*this, _deviceInfo);
             Exchange::JDeviceAudioCapabilities::Register(*this, _deviceAudioCapabilities);

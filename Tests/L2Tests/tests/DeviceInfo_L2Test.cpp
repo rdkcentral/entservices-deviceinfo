@@ -128,8 +128,91 @@ DeviceInfo_L2test::DeviceInfo_L2test()
             }));
 
 
+    // DeviceInfo resolves over COM-RPC via DSHelper, which needs the real
+    // org.rdk.DeviceSettings plugin activated. DeviceSettings itself depends on
+    // PowerManager at runtime (DSPwrEventListener connects to it over COM-RPC;
+    // this is a systemd Requires/After in wpeframework-devicesettings.service,
+    // not in DeviceSettings.conf.in's precondition list), so activate it first,
+    // best-effort, mirroring FrameRate_L2Test.cpp.
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_INIT())
+        .Times(::testing::AtMost(1))
+        .WillRepeatedly(::testing::Return(DEEPSLEEPMGR_SUCCESS));
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_INIT())
+        .Times(::testing::AtMost(1))
+        .WillRepeatedly(::testing::Return(PWRMGR_SUCCESS));
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetWakeupSrc(::testing::_, ::testing::_))
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(::testing::Return(PWRMGR_SUCCESS));
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_GetPowerState(::testing::_))
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(::testing::Invoke(
+            [](PWRMgr_PowerState_t* powerState) {
+                *powerState = PWRMGR_POWERSTATE_ON;
+                return PWRMGR_SUCCESS;
+            }));
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_API_SetPowerState(::testing::_))
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(::testing::Return(PWRMGR_SUCCESS));
+
+    /* Try to activate PowerManager plugin (DeviceSettings depends on it) */
+    TEST_LOG("Checking PowerManager plugin state...");
+    {
+        std::string currentState;
+        status = GetPluginState("org.rdk.PowerManager", currentState);
+
+        if (status == Core::ERROR_NONE && currentState == "deactivated") {
+            TEST_LOG("Attempting to activate PowerManager plugin...");
+            status = ActivateService("org.rdk.PowerManager");
+
+            if (status == Core::ERROR_NONE) {
+                TEST_LOG("PowerManager activated successfully");
+            } else {
+                TEST_LOG("PowerManager activation failed (status: %u) - continuing without it", status);
+            }
+        } else if (status == Core::ERROR_NONE && currentState == "activated") {
+            TEST_LOG("PowerManager is already activated");
+        } else {
+            TEST_LOG("PowerManager is in '%s' state - skipping activation", currentState.c_str());
+        }
+    }
+
+    TEST_LOG("Activating DeviceSettings plugin...");
+    {
+        std::string currentState;
+        status = GetPluginState("org.rdk.DeviceSettings", currentState);
+        if (status == Core::ERROR_NONE && currentState == "activated") {
+            TEST_LOG("DeviceSettings is already activated");
+            status = Core::ERROR_NONE;
+        } else {
+            status = ActivateServiceWithRetry("org.rdk.DeviceSettings", 3, 500);
+        }
+    }
+    EXPECT_EQ(Core::ERROR_NONE, status);
+
+    // Deterministic handle=type*100+index mapping for GetVideoPort()/GetAudioPort().
+    // Port *existence* itself (video: "Internal0"; audio: "SPDIF0"/"HEADPHONE0"/
+    // "SPEAKER0"/"HDMI_ARC0" — no "HDMI0") comes from the fixed TV ds-hal config,
+    // not from these per-call mocks; tests below use those real names.
+    ON_CALL(*p_dsVideoPortHalMock, dsGetVideoPort(::testing::_, ::testing::_, ::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [](dsVideoPortType_t type, int index, intptr_t* handle) -> dsError_t {
+                *handle = static_cast<intptr_t>(type) * 100 + index;
+                return dsERR_NONE;
+            }));
+    ON_CALL(*p_dsAudioHalMock, dsGetAudioPort(::testing::_, ::testing::_, ::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [](dsAudioPortType_t type, int index, intptr_t* handle) -> dsError_t {
+                *handle = static_cast<intptr_t>(type) * 100 + index;
+                return dsERR_NONE;
+            }));
+
     /* Activate plugin in constructor */
-    status = ActivateService("DeviceInfo");
+    TEST_LOG("Activating DeviceInfo plugin...");
+    status = ActivateServiceWithRetry("DeviceInfo", 3, 500);
     EXPECT_EQ(Core::ERROR_NONE, status);
 }
 
@@ -150,8 +233,63 @@ DeviceInfo_L2test::~DeviceInfo_L2test()
         m_controller_deviceinfo = nullptr;
     }
 
-    status = DeactivateService("DeviceInfo");
+    TEST_LOG("Deactivating DeviceInfo plugin...");
+    {
+        std::string currentState;
+        status = GetPluginState("DeviceInfo", currentState);
+        if (status == Core::ERROR_NONE && (currentState == "activated" || currentState == "suspended")) {
+            status = DeactivateService("DeviceInfo");
+            if (status != Core::ERROR_NONE) {
+                TEST_LOG("WARNING: Failed to deactivate DeviceInfo (status: %u)", status);
+            }
+        } else {
+            status = Core::ERROR_NONE;
+        }
+    }
     EXPECT_EQ(Core::ERROR_NONE, status);
+
+    // Reverse activation order: DeviceInfo (above) before DeviceSettings.
+    TEST_LOG("Deactivating DeviceSettings plugin...");
+    {
+        std::string currentState;
+        status = GetPluginState("org.rdk.DeviceSettings", currentState);
+        if (status == Core::ERROR_NONE && (currentState == "activated" || currentState == "suspended")) {
+            status = DeactivateService("org.rdk.DeviceSettings");
+            if (status != Core::ERROR_NONE) {
+                TEST_LOG("WARNING: Failed to deactivate DeviceSettings (status: %u)", status);
+            }
+        } else {
+            status = Core::ERROR_NONE;
+        }
+    }
+    EXPECT_EQ(Core::ERROR_NONE, status);
+
+    // Reverse activation order: DeviceSettings (above) before PowerManager.
+    TEST_LOG("Checking PowerManager plugin state for cleanup...");
+
+    // Set expectations for PowerManager HAL termination (may not be called, if
+    // PowerManager was never activated above — AtMost(1) tolerates zero calls).
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_TERM())
+        .Times(::testing::AtMost(1))
+        .WillRepeatedly(::testing::Return(PWRMGR_SUCCESS));
+
+    EXPECT_CALL(*p_powerManagerHalMock, PLAT_DS_TERM())
+        .Times(::testing::AtMost(1))
+        .WillRepeatedly(::testing::Return(DEEPSLEEPMGR_SUCCESS));
+
+    {
+        std::string currentState;
+        status = GetPluginState("org.rdk.PowerManager", currentState);
+        if (status == Core::ERROR_NONE && currentState == "activated") {
+            TEST_LOG("Deactivating PowerManager plugin...");
+            status = DeactivateService("org.rdk.PowerManager");
+            if (status != Core::ERROR_NONE) {
+                TEST_LOG("WARNING: Failed to deactivate PowerManager (status: %u)", status);
+            }
+        } else {
+            TEST_LOG("PowerManager is in '%s' state, no deactivation needed", currentState.c_str());
+        }
+    }
 }
 
 uint32_t DeviceInfo_L2test::CreateDeviceInfoInterfaceObject()
@@ -204,72 +342,42 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_MethodTest)
 
     /****************** defaultresolution ******************/
     {
+        // "Internal0" defaultResolution is fixed TV config ("1080i50"), not mockable.
         TEST_LOG("Testing defaultresolution method\n");
         JsonObject result, params;
-        params["videoDisplay"] = "HDMI0";
-        
-        device::VideoOutputPort videoOutputPort;
-        device::VideoResolution videoResolution;
-        string videoPort(_T("HDMI0"));
-        string videoPortDefaultResolution(_T("1080p"));
+        params["videoDisplay"] = "Internal0";
 
-        ON_CALL(*p_videoResolutionMock, getName())
-            .WillByDefault(::testing::ReturnRef(videoPortDefaultResolution));
-        ON_CALL(*p_videoOutputPortMock, getDefaultResolution())
-            .WillByDefault(::testing::ReturnRef(videoResolution));
-        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-            .WillByDefault(::testing::Return(videoPort));
-        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPort));
-        
         status = InvokeServiceMethod("DeviceInfo.1", "defaultresolution", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
             EXPECT_TRUE(result.HasLabel("defaultResolution"));
             string resolution = result["defaultResolution"].String();
-            EXPECT_EQ(resolution, "1080p");
+            EXPECT_EQ(resolution, "1080i50");
             TEST_LOG("defaultresolution: %s", resolution.c_str());
         }
     }
 
     /****************** supportedresolutions ******************/
     {
+        // "Internal0" supports a fixed list of 12 resolutions, not mockable.
         TEST_LOG("Testing supportedresolutions method\n");
         JsonObject result, params;
-        params["videoDisplay"] = "HDMI0";
-        
-        device::VideoOutputPort videoOutputPort;
-        device::VideoOutputPortType videoOutputPortType;
-        device::VideoResolution videoResolution;
-        string videoPort(_T("HDMI0"));
-        string videoPortSupportedResolution(_T("1080p"));
+        params["videoDisplay"] = "Internal0";
 
-        ON_CALL(*p_videoResolutionMock, getName())
-            .WillByDefault(::testing::ReturnRef(videoPortSupportedResolution));
-        ON_CALL(*p_videoOutputPortTypeMock, getSupportedResolutions())
-            .WillByDefault(::testing::Return(device::List<device::VideoResolution>({ videoResolution })));
-        ON_CALL(*p_videoOutputPortTypeMock, getId())
-            .WillByDefault(::testing::Return(0));
-        ON_CALL(*p_videoOutputPortMock, getType())
-            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
-        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-            .WillByDefault(::testing::Return(videoPort));
-        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPort));
-        ON_CALL(*p_videoOutputPortConfigImplMock, getPortType(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
-        
         status = InvokeServiceMethod("DeviceInfo.1", "supportedresolutions", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
             EXPECT_TRUE(result.HasLabel("supportedResolutions"));
             JsonArray resolutions = result["supportedResolutions"].Array();
             EXPECT_GT(resolutions.Length(), 0);
-            if (resolutions.Length() > 0) {
-                string resolution = resolutions[0].String();
-                EXPECT_EQ(resolution, "1080p");
-                TEST_LOG("First supported resolution: %s", resolution.c_str());
+            bool hasFullHd = false;
+            for (int i = 0; i < resolutions.Length(); i++) {
+                if (resolutions[i].String() == "1080p") {
+                    hasFullHd = true;
+                }
+                TEST_LOG("Supported resolution[%d]: %s", i, resolutions[i].String().c_str());
             }
+            EXPECT_TRUE(hasFullHd);
         }
     }
 
@@ -277,18 +385,15 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_MethodTest)
     {
         TEST_LOG("Testing supportedhdcp method\n");
         JsonObject result, params;
-        params["videoDisplay"] = "HDMI0";
-        
-        device::VideoOutputPort videoOutputPort;
-        string videoPort(_T("HDMI0"));
+        params["videoDisplay"] = "Internal0";
 
-        ON_CALL(*p_videoOutputPortMock, getHDCPProtocol())
-            .WillByDefault(::testing::Return(dsHDCP_VERSION_2X));
-        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-            .WillByDefault(::testing::Return(videoPort));
-        ON_CALL(*p_videoOutputPortConfigImplMock, getPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPort));
-        
+        ON_CALL(*p_dsVideoPortHalMock, dsGetHDCPProtocol(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](intptr_t, dsHdcpProtocolVersion_t* protocolVersion) -> dsError_t {
+                    *protocolVersion = dsHDCP_VERSION_2X;
+                    return dsERR_NONE;
+                }));
+
         status = InvokeServiceMethod("DeviceInfo.1", "supportedhdcp", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
@@ -302,25 +407,18 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_MethodTest)
 
     /****************** audiocapabilities ******************/
     {
+        // No "HDMI0" audio port in this config; use a real one ("SPDIF0").
         TEST_LOG("Testing audiocapabilities method\n");
         JsonObject result, params;
-        params["audioPort"] = "HDMI0";
-        
-        device::AudioOutputPort audioOutputPort;
-        string audioPort(_T("HDMI0"));
+        params["audioPort"] = "SPDIF0";
 
-        ON_CALL(*p_audioOutputPortMock, getAudioCapabilities(::testing::_))
+        ON_CALL(*p_dsAudioHalMock, dsGetAudioCapabilities(::testing::_, ::testing::_))
             .WillByDefault(::testing::Invoke(
-                [&](int* capabilities) {
-                    if (capabilities != nullptr) {
-                        *capabilities = dsAUDIOSUPPORT_ATMOS | dsAUDIOSUPPORT_DD | dsAUDIOSUPPORT_DDPLUS | dsAUDIOSUPPORT_DAD | dsAUDIOSUPPORT_DAPv2 | dsAUDIOSUPPORT_MS12;
-                    }
+                [](intptr_t, int* capabilities) -> dsError_t {
+                    *capabilities = dsAUDIOSUPPORT_ATMOS | dsAUDIOSUPPORT_DD | dsAUDIOSUPPORT_DDPLUS | dsAUDIOSUPPORT_DAD | dsAUDIOSUPPORT_DAPv2 | dsAUDIOSUPPORT_MS12;
+                    return dsERR_NONE;
                 }));
-        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-            .WillByDefault(::testing::Return(audioPort));
-        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(audioOutputPort));
-        
+
         status = InvokeServiceMethod("DeviceInfo.1", "audiocapabilities", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
@@ -332,9 +430,9 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_MethodTest)
             for (int i = 0; i < capabilities.Length(); i++) {
                 string cap = capabilities[i].String();
                 if (cap == "ATMOS") hasAtmos = true;
-                if (cap == "DD") hasDD = true;
-                if (cap == "DDPLUS") hasDDPlus = true;
-                if (cap == "DAD") hasDAD = true;
+                if (cap == "DOLBY_DIGITAL") hasDD = true;
+                if (cap == "DOLBY_DIGITAL_PLUS") hasDDPlus = true;
+                if (cap == "Dual_Audio_Decode") hasDAD = true;
                 if (cap == "DAPv2") hasDAPv2 = true;
                 if (cap == "MS12") hasMS12 = true;
             }
@@ -347,23 +445,15 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_MethodTest)
     {
         TEST_LOG("Testing ms12capabilities method\n");
         JsonObject result, params;
-        params["audioPort"] = "HDMI0";
-        
-        device::AudioOutputPort audioOutputPort;
-        string audioPort(_T("HDMI0"));
+        params["audioPort"] = "SPDIF0";
 
-        ON_CALL(*p_audioOutputPortMock, getMS12Capabilities(::testing::_))
+        ON_CALL(*p_dsAudioHalMock, dsGetMS12Capabilities(::testing::_, ::testing::_))
             .WillByDefault(::testing::Invoke(
-                [&](int* capabilities) {
-                    if (capabilities != nullptr) {
-                        *capabilities = dsMS12SUPPORT_DolbyVolume | dsMS12SUPPORT_InteligentEqualizer | dsMS12SUPPORT_DialogueEnhancer;
-                    }
+                [](intptr_t, int* capabilities) -> dsError_t {
+                    *capabilities = dsMS12SUPPORT_DolbyVolume | dsMS12SUPPORT_InteligentEqualizer | dsMS12SUPPORT_DialogueEnhancer;
+                    return dsERR_NONE;
                 }));
-        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-            .WillByDefault(::testing::Return(audioPort));
-        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(audioOutputPort));
-        
+
         status = InvokeServiceMethod("DeviceInfo.1", "ms12capabilities", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
@@ -387,19 +477,17 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_MethodTest)
     {
         TEST_LOG("Testing supportedms12audioprofiles method\n");
         JsonObject result, params;
-        params["audioPort"] = "HDMI0";
-        
-        device::AudioOutputPort audioOutputPort;
-        string audioPort(_T("HDMI0"));
-        string audioPortMS12AudioProfile(_T("Movie"));
+        params["audioPort"] = "SPDIF0";
 
-        ON_CALL(*p_audioOutputPortMock, getMS12AudioProfileList())
-            .WillByDefault(::testing::Return(std::vector<std::string>({ audioPortMS12AudioProfile })));
-        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-            .WillByDefault(::testing::Return(audioPort));
-        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(audioOutputPort));
-        
+        ON_CALL(*p_dsAudioHalMock, dsGetMS12AudioProfileList(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](intptr_t, dsMS12AudioProfileList_t* profiles) -> dsError_t {
+                    strncpy(profiles->audioProfileList, "Movie", sizeof(profiles->audioProfileList) - 1);
+                    profiles->audioProfileList[sizeof(profiles->audioProfileList) - 1] = '\0';
+                    profiles->audioProfileCount = 1;
+                    return dsERR_NONE;
+                }));
+
         status = InvokeServiceMethod("DeviceInfo.1", "supportedms12audioprofiles", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
@@ -704,16 +792,9 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_PropertyTest)
 
     /****************** supportedaudioports ******************/
     {
+        // Port names come from fixed TV config, not mockable.
         TEST_LOG("Testing supportedaudioports property\n");
-        JsonObject result, params;
         JsonObject getResults;
-        device::AudioOutputPort audioOutputPort;
-        string audioPort(_T("HDMI0"));
-
-        ON_CALL(*p_audioOutputPortMock, getName())
-            .WillByDefault(::testing::ReturnRef(audioPort));
-        ON_CALL(*p_hostImplMock, getAudioOutputPorts())
-            .WillByDefault(::testing::Return(device::List<device::AudioOutputPort>({ audioOutputPort })));
 
         uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "supportedaudioports@0", getResults);
         EXPECT_EQ(Core::ERROR_NONE, getResult);
@@ -721,28 +802,23 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_PropertyTest)
             EXPECT_TRUE(getResults.HasLabel("supportedAudioPorts"));
             JsonArray audioPorts = getResults["supportedAudioPorts"].Array();
             EXPECT_GT(audioPorts.Length(), 0);
-            if (audioPorts.Length() > 0) {
-                string port = audioPorts[0].String();
-                EXPECT_EQ(port, "HDMI0");
-                TEST_LOG("First audio port: %s", port.c_str());
+            bool hasSpdif = false;
+            for (int i = 0; i < audioPorts.Length(); i++) {
+                if (audioPorts[i].String() == "SPDIF0") {
+                    hasSpdif = true;
+                }
+                TEST_LOG("Audio port[%d]: %s", i, audioPorts[i].String().c_str());
             }
+            EXPECT_TRUE(hasSpdif);
         }
     }
 
     /****************** supportedvideodisplays ******************/
     {
+        // "Internal0" is the only video port in this fixed config.
         TEST_LOG("Testing supportedvideodisplays property\n");
-        JsonObject result, params;
-        
-        device::VideoOutputPort videoOutputPort;
-        string videoPort(_T("HDMI0"));
-
-        ON_CALL(*p_videoOutputPortMock, getName())
-            .WillByDefault(::testing::ReturnRef(videoPort));
-        ON_CALL(*p_hostImplMock, getVideoOutputPorts())
-            .WillByDefault(::testing::Return(device::List<device::VideoOutputPort>({ videoOutputPort })));
-
         JsonObject getResults;
+
         uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "supportedvideodisplays@0", getResults);
         EXPECT_EQ(Core::ERROR_NONE, getResult);
         if (getResult == Core::ERROR_NONE) {
@@ -751,7 +827,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_PropertyTest)
             EXPECT_GT(videoDisplays.Length(), 0);
             if (videoDisplays.Length() > 0) {
                 string display = videoDisplays[0].String();
-                EXPECT_EQ(display, "HDMI0");
+                EXPECT_EQ(display, "Internal0");
                 TEST_LOG("First video display: %s", display.c_str());
             }
         }
@@ -760,14 +836,16 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_PropertyTest)
     /****************** hostedid ******************/
     {
         TEST_LOG("Testing hostedid property\n");
-        JsonObject result, params;
-        
-        ON_CALL(*p_hostImplMock, getHostEDID(::testing::_))
+
+        ON_CALL(*p_dsHostHalMock, dsGetHostEDID(::testing::_, ::testing::_))
             .WillByDefault(::testing::Invoke(
-                [&](std::vector<uint8_t>& edid) {
-                    edid = { 't', 'e', 's', 't' };
+                [](unsigned char* edid, int* length) -> dsError_t {
+                    const unsigned char data[] = { 't', 'e', 's', 't' };
+                    memcpy(edid, data, sizeof(data));
+                    *length = sizeof(data);
+                    return dsERR_NONE;
                 }));
-        
+
         JsonObject getResults;
         uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "hostedid@0", getResults);
         EXPECT_EQ(Core::ERROR_NONE, getResult);
@@ -792,72 +870,50 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_ErrorHandlingTest)
 
     /****************** Test with invalid video display ******************/
     {
+        // Unknown port -> Core::ERROR_NOT_EXIST (no HAL throw surface any more).
         TEST_LOG("Testing defaultresolution with invalid videoDisplay\n");
         JsonObject result, params;
         params["videoDisplay"] = "INVALID_PORT";
-        
-        device::VideoOutputPort videoOutputPort;
-        string videoPort(_T("HDMI0"));
 
-        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-            .WillByDefault(::testing::Return(videoPort));
-        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
-            .WillByDefault(::testing::Throw(device::Exception("Invalid port")));
-        
         status = InvokeServiceMethod("DeviceInfo.1", "defaultresolution", params, result);
-        EXPECT_EQ(Core::ERROR_GENERAL, status);
+        EXPECT_EQ(Core::ERROR_NOT_EXIST, status);
     }
 
     /****************** Test with invalid audio port ******************/
     {
+        // Unlike video ports, an unresolved audio port is NOT an error here.
         TEST_LOG("Testing audiocapabilities with invalid audioPort\n");
         JsonObject result, params;
         params["audioPort"] = "INVALID_AUDIO_PORT";
-        
-        string audioPort(_T("HDMI0"));
 
-        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-            .WillByDefault(::testing::Return(audioPort));
-        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-            .WillByDefault(::testing::Throw(device::Exception("Invalid audio port")));
-        
         status = InvokeServiceMethod("DeviceInfo.1", "audiocapabilities", params, result);
-        EXPECT_EQ(Core::ERROR_GENERAL, status);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(result.HasLabel("success"));
+            EXPECT_TRUE(result["success"].Boolean());
+        }
     }
 
     /****************** Test supportedresolutions with exception ******************/
     {
-        TEST_LOG("Testing supportedresolutions with device exception\n");
+        TEST_LOG("Testing supportedresolutions with invalid videoDisplay\n");
         JsonObject result, params;
-        params["videoDisplay"] = "HDMI0";
-        
-        device::VideoOutputPort videoOutputPort;
-        string videoPort(_T("HDMI0"));
+        params["videoDisplay"] = "INVALID_PORT";
 
-        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-            .WillByDefault(::testing::Return(videoPort));
-        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPort));
-        ON_CALL(*p_videoOutputPortMock, getType())
-            .WillByDefault(::testing::Throw(device::Exception("Type exception")));
-        
         status = InvokeServiceMethod("DeviceInfo.1", "supportedresolutions", params, result);
-        EXPECT_EQ(Core::ERROR_GENERAL, status);
+        EXPECT_EQ(Core::ERROR_NOT_EXIST, status);
     }
 
     /****************** Test ms12capabilities with exception ******************/
     {
+        // Real HAL-level failure surface: dsGetMS12Capabilities() itself failing.
         TEST_LOG("Testing ms12capabilities with device exception\n");
         JsonObject result, params;
-        params["audioPort"] = "HDMI0";
-        
-        string audioPort(_T("HDMI0"));
+        params["audioPort"] = "SPDIF0";
 
-        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-            .WillByDefault(::testing::Return(audioPort));
-        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-            .WillByDefault(::testing::Throw(device::Exception("MS12 exception")));
-        
+        ON_CALL(*p_dsAudioHalMock, dsGetMS12Capabilities(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Return(dsERR_GENERAL));
+
         status = InvokeServiceMethod("DeviceInfo.1", "ms12capabilities", params, result);
         EXPECT_EQ(Core::ERROR_GENERAL, status);
     }
@@ -873,55 +929,35 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_EdgeCaseTest)
 
     /****************** Test with empty videoDisplay parameter ******************/
     {
+        // Empty videoDisplay resolves to the only configured port, "Internal0".
         TEST_LOG("Testing defaultresolution with empty videoDisplay\n");
         JsonObject result, params;
         params["videoDisplay"] = "";
-        
-        device::VideoOutputPort videoOutputPort;
-        device::VideoResolution videoResolution;
-        string videoPort(_T("HDMI0"));
-        string videoPortDefaultResolution(_T("1080p"));
 
-        ON_CALL(*p_videoResolutionMock, getName())
-            .WillByDefault(::testing::ReturnRef(videoPortDefaultResolution));
-        ON_CALL(*p_videoOutputPortMock, getDefaultResolution())
-            .WillByDefault(::testing::ReturnRef(videoResolution));
-        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-            .WillByDefault(::testing::Return(videoPort));
-        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPort));
-        
         status = InvokeServiceMethod("DeviceInfo.1", "defaultresolution", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
             EXPECT_TRUE(result.HasLabel("defaultResolution"));
             string resolution = result["defaultResolution"].String();
-            EXPECT_EQ(resolution, "1080p");
+            EXPECT_EQ(resolution, "1080i50");
             TEST_LOG("defaultresolution with empty param: %s", resolution.c_str());
         }
     }
 
     /****************** Test with empty audioPort parameter ******************/
     {
+        // Empty audioPort resolves to the first configured audio port ("SPDIF0").
         TEST_LOG("Testing audiocapabilities with empty audioPort\n");
         JsonObject result, params;
         params["audioPort"] = "";
-        
-        device::AudioOutputPort audioOutputPort;
-        string audioPort(_T("HDMI0"));
 
-        ON_CALL(*p_audioOutputPortMock, getAudioCapabilities(::testing::_))
+        ON_CALL(*p_dsAudioHalMock, dsGetAudioCapabilities(::testing::_, ::testing::_))
             .WillByDefault(::testing::Invoke(
-                [&](int* capabilities) {
-                    if (capabilities != nullptr) {
-                        *capabilities = dsAUDIOSUPPORT_NONE;
-                    }
+                [](intptr_t, int* capabilities) -> dsError_t {
+                    *capabilities = dsAUDIOSUPPORT_NONE;
+                    return dsERR_NONE;
                 }));
-        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-            .WillByDefault(::testing::Return(audioPort));
-        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(audioOutputPort));
-        
+
         status = InvokeServiceMethod("DeviceInfo.1", "audiocapabilities", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
@@ -934,47 +970,21 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_EdgeCaseTest)
 
     /****************** Test with multiple resolutions ******************/
     {
+        // "Internal0" supports a fixed list of 12 resolutions, not per-test controllable.
         TEST_LOG("Testing supportedresolutions with multiple resolutions\n");
         JsonObject result, params;
-        params["videoDisplay"] = "HDMI0";
-        
-        device::VideoOutputPort videoOutputPort;
-        device::VideoOutputPortType videoOutputPortType;
-        device::VideoResolution videoResolution1, videoResolution2, videoResolution3;
-        string videoPort(_T("HDMI0"));
-        string resolution1(_T("480p"));
-        string resolution2(_T("720p"));
-        string resolution3(_T("1080p"));
+        params["videoDisplay"] = "Internal0";
 
-
-        ON_CALL(*p_videoResolutionMock, getName())
-            .WillByDefault(::testing::ReturnRef(resolution1));
-        ON_CALL(*p_videoOutputPortTypeMock, getSupportedResolutions())
-            .WillByDefault(::testing::Return(device::List<device::VideoResolution>({ videoResolution1, videoResolution2, videoResolution3 })));
-        ON_CALL(*p_videoOutputPortTypeMock, getId())
-            .WillByDefault(::testing::Return(0));
-        ON_CALL(*p_videoOutputPortMock, getType())
-            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
-        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-            .WillByDefault(::testing::Return(videoPort));
-        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPort));
-        ON_CALL(*p_videoOutputPortConfigImplMock, getPortType(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
-        
         status = InvokeServiceMethod("DeviceInfo.1", "supportedresolutions", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
             EXPECT_TRUE(result.HasLabel("supportedResolutions"));
             JsonArray resolutions = result["supportedResolutions"].Array();
-            EXPECT_EQ(resolutions.Length(), 3);  // Should have 3 resolutions
+            EXPECT_EQ(resolutions.Length(), 12);
             TEST_LOG("Supported resolutions count: %d", resolutions.Length());
-            // Verify resolutions are present
             for (int i = 0; i < resolutions.Length(); i++) {
                 string res = resolutions[i].String();
                 EXPECT_FALSE(res.empty());
-                EXPECT_EQ(res, "480p");
-                // EXPECT_TRUE(res == "480p" || res == "720p" || res == "1080p");
                 TEST_LOG("Resolution[%d]: %s", i, res.c_str());
             }
         }
@@ -984,18 +994,15 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_EdgeCaseTest)
     {
         TEST_LOG("Testing supportedhdcp with HDCP 1.x\n");
         JsonObject result, params;
-        params["videoDisplay"] = "HDMI0";
-        
-        device::VideoOutputPort videoOutputPort;
-        string videoPort(_T("HDMI0"));
+        params["videoDisplay"] = "Internal0";
 
-        ON_CALL(*p_videoOutputPortMock, getHDCPProtocol())
-            .WillByDefault(::testing::Return(dsHDCP_VERSION_1X));
-        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-            .WillByDefault(::testing::Return(videoPort));
-        ON_CALL(*p_videoOutputPortConfigImplMock, getPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPort));
-        
+        ON_CALL(*p_dsVideoPortHalMock, dsGetHDCPProtocol(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](intptr_t, dsHdcpProtocolVersion_t* protocolVersion) -> dsError_t {
+                    *protocolVersion = dsHDCP_VERSION_1X;
+                    return dsERR_NONE;
+                }));
+
         status = InvokeServiceMethod("DeviceInfo.1", "supportedhdcp", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
@@ -1012,23 +1019,15 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_EdgeCaseTest)
     {
         TEST_LOG("Testing ms12capabilities with all capabilities enabled\n");
         JsonObject result, params;
-        params["audioPort"] = "HDMI0";
-        
-        device::AudioOutputPort audioOutputPort;
-        string audioPort(_T("HDMI0"));
+        params["audioPort"] = "SPDIF0";
 
-        ON_CALL(*p_audioOutputPortMock, getMS12Capabilities(::testing::_))
+        ON_CALL(*p_dsAudioHalMock, dsGetMS12Capabilities(::testing::_, ::testing::_))
             .WillByDefault(::testing::Invoke(
-                [&](int* capabilities) {
-                    if (capabilities != nullptr) {
-                        *capabilities = dsMS12SUPPORT_DolbyVolume | dsMS12SUPPORT_InteligentEqualizer | dsMS12SUPPORT_DialogueEnhancer;
-                    }
+                [](intptr_t, int* capabilities) -> dsError_t {
+                    *capabilities = dsMS12SUPPORT_DolbyVolume | dsMS12SUPPORT_InteligentEqualizer | dsMS12SUPPORT_DialogueEnhancer;
+                    return dsERR_NONE;
                 }));
-        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-            .WillByDefault(::testing::Return(audioPort));
-        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(audioOutputPort));
-        
+
         status = InvokeServiceMethod("DeviceInfo.1", "ms12capabilities", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
@@ -1053,19 +1052,18 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_EdgeCaseTest)
     {
         TEST_LOG("Testing supportedms12audioprofiles with multiple profiles\n");
         JsonObject result, params;
-        params["audioPort"] = "HDMI0";
-        
-        device::AudioOutputPort audioOutputPort;
-        string audioPort(_T("HDMI0"));
-        std::vector<std::string> profiles = {"Movie", "Music", "Sports", "Game"};
+        params["audioPort"] = "SPDIF0";
 
-        ON_CALL(*p_audioOutputPortMock, getMS12AudioProfileList())
-            .WillByDefault(::testing::Return(profiles));
-        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-            .WillByDefault(::testing::Return(audioPort));
-        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(audioOutputPort));
-        
+        ON_CALL(*p_dsAudioHalMock, dsGetMS12AudioProfileList(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Invoke(
+                [](intptr_t, dsMS12AudioProfileList_t* profiles) -> dsError_t {
+                    const char* list = "Movie,Music,Sports,Game";
+                    strncpy(profiles->audioProfileList, list, sizeof(profiles->audioProfileList) - 1);
+                    profiles->audioProfileList[sizeof(profiles->audioProfileList) - 1] = '\0';
+                    profiles->audioProfileCount = 4;
+                    return dsERR_NONE;
+                }));
+
         status = InvokeServiceMethod("DeviceInfo.1", "supportedms12audioprofiles", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
@@ -1228,35 +1226,31 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_PropertyEdgeCaseTest)
 
     /****************** Test multiple audio ports ******************/
     {
-        TEST_LOG("Testing supportedaudioports with multiple ports\n");
-        
-        device::AudioOutputPort audioOutputPort1, audioOutputPort2, audioOutputPort3;
-        string audioPort1(_T("HDMI0"));
-        string audioPort2(_T("SPDIF0"));
-        string audioPort3(_T("SPEAKER0"));
-
-        ON_CALL(*p_audioOutputPortMock, getName())
-            .WillByDefault(::testing::ReturnRef(audioPort1));
-        ON_CALL(*p_hostImplMock, getAudioOutputPorts())
-            .WillByDefault(::testing::Return(device::List<device::AudioOutputPort>({ audioOutputPort1, audioOutputPort2, audioOutputPort3 })));
+        // Fixed config already has 4 audio ports — not per-test controllable.
+        TEST_LOG("Testing supportedaudioports with multiple ports (real TV config)\n");
 
         JsonObject getResults;
         uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "supportedaudioports@0", getResults);
         EXPECT_EQ(Core::ERROR_NONE, getResult);
+        if (getResult == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("supportedAudioPorts"));
+            EXPECT_GT(getResults["supportedAudioPorts"].Array().Length(), 1);
+        }
     }
 
     /****************** Test hostedid with large EDID ******************/
     {
         TEST_LOG("Testing hostedid with large EDID data\n");
-        
-        ON_CALL(*p_hostImplMock, getHostEDID(::testing::_))
+
+        ON_CALL(*p_dsHostHalMock, dsGetHostEDID(::testing::_, ::testing::_))
             .WillByDefault(::testing::Invoke(
-                [&](std::vector<uint8_t>& edid) {
+                [](unsigned char* edid, int* length) -> dsError_t {
                     // Standard EDID size is 128 or 256 bytes
-                    edid.resize(256);
-                    for (size_t i = 0; i < 256; i++) {
-                        edid[i] = static_cast<uint8_t>(i & 0xFF);
+                    for (int i = 0; i < 256; i++) {
+                        edid[i] = static_cast<unsigned char>(i & 0xFF);
                     }
+                    *length = 256;
+                    return dsERR_NONE;
                 }));
         
         JsonObject getResults;
@@ -1288,35 +1282,32 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_ExceptionHandlingTest)
 
     /****************** Test supportedaudioports with exception ******************/
     {
-        TEST_LOG("Testing supportedaudioports with device exception\n");
-        
-        ON_CALL(*p_hostImplMock, getAudioOutputPorts())
-            .WillByDefault(::testing::Throw(device::Exception("Audio ports exception")));
+        // No injectable HAL failure for static port enumeration; just verify it works.
+        TEST_LOG("Testing supportedaudioports (real TV config)\n");
 
         JsonObject getResults;
         uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "supportedaudioports@0", getResults);
-        EXPECT_EQ(Core::ERROR_GENERAL, getResult);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
     }
 
     /****************** Test supportedvideodisplays with exception ******************/
     {
-        TEST_LOG("Testing supportedvideodisplays with device exception\n");
-        
-        ON_CALL(*p_hostImplMock, getVideoOutputPorts())
-            .WillByDefault(::testing::Throw(device::Exception("Video ports exception")));
+        // See the "supportedaudioports" note above — same reasoning applies.
+        TEST_LOG("Testing supportedvideodisplays (real TV config)\n");
 
         JsonObject getResults;
         uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "supportedvideodisplays@0", getResults);
-        EXPECT_EQ(Core::ERROR_GENERAL, getResult);
+        EXPECT_EQ(Core::ERROR_NONE, getResult);
     }
 
     /****************** Test hostedid with exception ******************/
     {
+        // Real HAL-level failure surface: dsGetHostEDID() itself failing.
         TEST_LOG("Testing hostedid with device exception\n");
-        
-        ON_CALL(*p_hostImplMock, getHostEDID(::testing::_))
-            .WillByDefault(::testing::Throw(device::Exception("EDID exception")));
-        
+
+        ON_CALL(*p_dsHostHalMock, dsGetHostEDID(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Return(dsERR_GENERAL));
+
         JsonObject getResults;
         uint32_t getResult = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "hostedid@0", getResults);
         EXPECT_EQ(Core::ERROR_GENERAL, getResult);
@@ -1324,37 +1315,28 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_ExceptionHandlingTest)
 
     /****************** Test supportedhdcp with exception ******************/
     {
+        // Real HAL-level failure surface: dsGetHDCPProtocol() itself failing.
         TEST_LOG("Testing supportedhdcp with exception\n");
         JsonObject result, params;
-        params["videoDisplay"] = "HDMI0";
-        
-        device::VideoOutputPort videoOutputPort;
-        string videoPort(_T("HDMI0"));
+        params["videoDisplay"] = "Internal0";
 
-        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-            .WillByDefault(::testing::Return(videoPort));
-        ON_CALL(*p_videoOutputPortConfigImplMock, getPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPort));
-        ON_CALL(*p_videoOutputPortMock, getHDCPProtocol())
-            .WillByDefault(::testing::Throw(device::Exception("HDCP exception")));
-        
+        ON_CALL(*p_dsVideoPortHalMock, dsGetHDCPProtocol(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Return(dsERR_GENERAL));
+
         status = InvokeServiceMethod("DeviceInfo.1", "supportedhdcp", params, result);
         EXPECT_EQ(Core::ERROR_GENERAL, status);
     }
 
     /****************** Test supportedms12audioprofiles with exception ******************/
     {
+        // Real HAL-level failure surface: dsGetMS12AudioProfileList() itself failing.
         TEST_LOG("Testing supportedms12audioprofiles with device exception\n");
         JsonObject result, params;
-        params["audioPort"] = "HDMI0";
-        
-        string audioPort(_T("HDMI0"));
+        params["audioPort"] = "SPDIF0";
 
-        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-            .WillByDefault(::testing::Return(audioPort));
-        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-            .WillByDefault(::testing::Throw(device::Exception("MS12 profiles exception")));
-        
+        ON_CALL(*p_dsAudioHalMock, dsGetMS12AudioProfileList(::testing::_, ::testing::_))
+            .WillByDefault(::testing::Return(dsERR_GENERAL));
+
         status = InvokeServiceMethod("DeviceInfo.1", "supportedms12audioprofiles", params, result);
         EXPECT_EQ(Core::ERROR_GENERAL, status);
     }
@@ -1412,72 +1394,42 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_MethodVariationsTest)
 
     /****************** Test defaultresolution with different resolutions ******************/
     {
-        TEST_LOG("Testing defaultresolution with 4K resolution\n");
+        // Fixed config, not per-test controllable.
+        TEST_LOG("Testing defaultresolution (real TV config)\n");
         JsonObject result, params;
-        params["videoDisplay"] = "HDMI0";
-        
-        device::VideoOutputPort videoOutputPort;
-        device::VideoResolution videoResolution;
-        string videoPort(_T("HDMI0"));
-        string videoPortDefaultResolution(_T("2160p"));
+        params["videoDisplay"] = "Internal0";
 
-        ON_CALL(*p_videoResolutionMock, getName())
-            .WillByDefault(::testing::ReturnRef(videoPortDefaultResolution));
-        ON_CALL(*p_videoOutputPortMock, getDefaultResolution())
-            .WillByDefault(::testing::ReturnRef(videoResolution));
-        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-            .WillByDefault(::testing::Return(videoPort));
-        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPort));
-        
         status = InvokeServiceMethod("DeviceInfo.1", "defaultresolution", params, result);
-        EXPECT_EQ(Core::ERROR_NONE, status);  // Change from ERROR_GENERAL to ERROR_NONE
+        EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
             EXPECT_TRUE(result.HasLabel("defaultResolution"));
             string resolution = result["defaultResolution"].String();
-            EXPECT_EQ(resolution, "2160p");
-            TEST_LOG("4K default resolution: %s", resolution.c_str());
+            EXPECT_EQ(resolution, "1080i50");
+            TEST_LOG("Default resolution: %s", resolution.c_str());
         }
     }
 
     /****************** Test supportedresolutions with 4K support ******************/
     {
-        TEST_LOG("Testing supportedresolutions with 4K support\n");
+        // Fixed config, includes 2160p30/2160p60, not per-test controllable.
+        TEST_LOG("Testing supportedresolutions includes 4K entries\n");
         JsonObject result, params;
-        params["videoDisplay"] = "HDMI0";
-        
-        device::VideoOutputPort videoOutputPort;
-        device::VideoOutputPortType videoOutputPortType;
-        device::VideoResolution res1, res2, res3, res4, res5;
-        string videoPort(_T("HDMI0"));
-        string resolution(_T("2160p"));
+        params["videoDisplay"] = "Internal0";
 
-        ON_CALL(*p_videoResolutionMock, getName())
-            .WillByDefault(::testing::ReturnRef(resolution));
-        ON_CALL(*p_videoOutputPortTypeMock, getSupportedResolutions())
-            .WillByDefault(::testing::Return(device::List<device::VideoResolution>({ res1, res2, res3, res4, res5 })));
-        ON_CALL(*p_videoOutputPortTypeMock, getId())
-            .WillByDefault(::testing::Return(0));
-        ON_CALL(*p_videoOutputPortMock, getType())
-            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
-        ON_CALL(*p_hostImplMock, getDefaultVideoPortName())
-            .WillByDefault(::testing::Return(videoPort));
-        ON_CALL(*p_hostImplMock, getVideoOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPort));
-        ON_CALL(*p_videoOutputPortConfigImplMock, getPortType(::testing::_))
-            .WillByDefault(::testing::ReturnRef(videoOutputPortType));
-        
         status = InvokeServiceMethod("DeviceInfo.1", "supportedresolutions", params, result);
-        EXPECT_EQ(Core::ERROR_NONE, status);  // Change from ERROR_GENERAL to ERROR_NONE
+        EXPECT_EQ(Core::ERROR_NONE, status);
         if (status == Core::ERROR_NONE) {
             EXPECT_TRUE(result.HasLabel("supportedResolutions"));
             JsonArray resolutions = result["supportedResolutions"].Array();
-            EXPECT_EQ(resolutions.Length(), 5);
-            if (resolutions.Length() > 0) {
-                string res = resolutions[0].String();
-                EXPECT_EQ(res, "2160p");
-                TEST_LOG("First 4K resolution: %s", res.c_str());
+            EXPECT_EQ(resolutions.Length(), 12);
+            bool has4K = false;
+            for (int i = 0; i < resolutions.Length(); i++) {
+                if (resolutions[i].String() == "2160p30" || resolutions[i].String() == "2160p60") {
+                    has4K = true;
+                }
             }
+            EXPECT_TRUE(has4K);
+            TEST_LOG("supportedresolutions includes 4K: %s", has4K ? "yes" : "no");
         }
     }
 
@@ -1486,23 +1438,15 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_MethodVariationsTest)
     {
         TEST_LOG("Testing ms12capabilities with none\n");
         JsonObject result, params;
-        params["audioPort"] = "HDMI0";
-        
-        device::AudioOutputPort audioOutputPort;
-        string audioPort(_T("HDMI0"));
+        params["audioPort"] = "SPDIF0";
 
-        ON_CALL(*p_audioOutputPortMock, getMS12Capabilities(::testing::_))
+        ON_CALL(*p_dsAudioHalMock, dsGetMS12Capabilities(::testing::_, ::testing::_))
             .WillByDefault(::testing::Invoke(
-                [&](int* capabilities) {
-                    if (capabilities != nullptr) {
-                        *capabilities = dsMS12SUPPORT_NONE;
-                    }
+                [](intptr_t, int* capabilities) -> dsError_t {
+                    *capabilities = dsMS12SUPPORT_NONE;
+                    return dsERR_NONE;
                 }));
-        ON_CALL(*p_hostImplMock, getDefaultAudioPortName())
-            .WillByDefault(::testing::Return(audioPort));
-        ON_CALL(*p_hostImplMock, getAudioOutputPort(::testing::_))
-            .WillByDefault(::testing::ReturnRef(audioOutputPort));
-        
+
         status = InvokeServiceMethod("DeviceInfo.1", "ms12capabilities", params, result);
         EXPECT_EQ(Core::ERROR_NONE, status);
     }
@@ -2049,14 +1993,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_SupportedAudioPorts)
 {
     ASSERT_TRUE(m_deviceinfoplugin != nullptr);
 
-    device::AudioOutputPort audioOutputPort;
-    string audioPort(_T("HDMI0"));
-
-    ON_CALL(*p_audioOutputPortMock, getName())
-        .WillByDefault(::testing::ReturnRef(audioPort));
-    ON_CALL(*p_hostImplMock, getAudioOutputPorts())
-        .WillByDefault(::testing::Return(device::List<device::AudioOutputPort>({ audioOutputPort })));
-
+    // Port names come from the fixed config; there is no "HDMI0" here.
     RPC::IStringIterator* portIterator = nullptr;
     bool success = false;
     Core::hresult rc = m_deviceinfoplugin->SupportedAudioPorts(portIterator, success);
@@ -2066,12 +2003,16 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_SupportedAudioPorts)
 
     string port;
     uint32_t count = 0;
+    bool hasSpdif = false;
     while (portIterator->Next(port)) {
         count++;
         EXPECT_FALSE(port.empty());
-        EXPECT_EQ(port, "HDMI0");
+        if (port == "SPDIF0") {
+            hasSpdif = true;
+        }
     }
     EXPECT_GT(count, 0u);
+    EXPECT_TRUE(hasSpdif);
 
     portIterator->Release();
 }

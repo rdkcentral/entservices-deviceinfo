@@ -22,7 +22,6 @@
 #include "DeviceInfo.h"
 
 #include "IarmBusMock.h"
-#include "ManagerMock.h"
 #include "ServiceMock.h"
 
 #include "FactoriesImplementation.h"
@@ -66,7 +65,6 @@ class DeviceInfoWebInitializedTest : public DeviceInfoWebTest {
 protected:
     NiceMock<FactoriesImplementation> factoriesImplementation;
     IarmBusImplMock   *p_iarmBusImplMock = nullptr ;
-    ManagerImplMock   *p_managerImplMock = nullptr ;
     NiceMock<ServiceMock> service;
     Core::Sink<NiceMock<SystemInfo>> subSystem;
 
@@ -76,8 +74,6 @@ protected:
         PluginHost::IFactories::Assign(&factoriesImplementation);
         p_iarmBusImplMock  = new NiceMock <IarmBusImplMock>;
         IarmBus::setImpl(p_iarmBusImplMock);
-        p_managerImplMock  = new NiceMock <ManagerImplMock>;
-        device::Manager::setImpl(p_managerImplMock);
 
         ON_CALL(service, ConfigLine())
             .WillByDefault(::testing::Return("{\"root\":{\"mode\":\"Off\"}}"));
@@ -103,12 +99,6 @@ protected:
         {
             delete p_iarmBusImplMock;
             p_iarmBusImplMock = nullptr;
-        }
-        device::Manager::setImpl(nullptr);
-        if (p_managerImplMock != nullptr)
-        {
-            delete p_managerImplMock;
-            p_managerImplMock = nullptr;
         }
     }
 };

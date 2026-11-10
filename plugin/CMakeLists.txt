@@ -29,7 +29,6 @@ find_package(${NAMESPACE}Definitions REQUIRED)
 find_package(CompileSettingsDebug CONFIG REQUIRED)
 find_package(${NAMESPACE}Helpers REQUIRED)
 find_package(RFC)
-find_package(DS)
 find_package(IARMBus)
 
 add_library(${MODULE_NAME} SHARED
@@ -58,7 +57,6 @@ add_library(${PLUGIN_IMPLEMENTATION} SHARED
 
 target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE
         ${RFC_INCLUDE_DIRS}
-        ${DS_INCLUDE_DIRS}
         ${IARMBUS_INCLUDE_DIRS})
 
 set_target_properties(${PLUGIN_IMPLEMENTATION} PROPERTIES
@@ -78,7 +76,6 @@ target_link_libraries(${PLUGIN_IMPLEMENTATION}
         ${NAMESPACE}Definitions::${NAMESPACE}Definitions
         ${NAMESPACE}::${NAMESPACE}Helpers
         ${RFC_LIBRARIES}
-        ${DS_LIBRARIES}
         ${IARMBUS_LIBRARIES})
 
 if (RDK_SERVICE_L2_TEST)
