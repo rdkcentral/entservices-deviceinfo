@@ -105,7 +105,7 @@ The plugin exposes a comprehensive JSON-RPC 2.0 API with the following method ca
 
 ### Response Times
 - **Device Information Queries**: < 10ms (cached data)
-- **Audio/Video Capabilities**: < 50ms (HAL queries)
+- **Audio/Video Capabilities**: < 50ms (DeviceSettings COM-RPC queries and cached configuration)
 - **EDID Reading**: < 100ms (I2C communication)
 - **Network Information**: < 5ms (system calls)
 
@@ -129,7 +129,7 @@ The plugin exposes a comprehensive JSON-RPC 2.0 API with the following method ca
 
 ### Testing Coverage
 - **L1 Tests**: Unit tests covering all interface methods
-- **L2 Tests**: Integration tests with hardware abstraction layer
+- **L2 Tests**: Integration tests exercising DeviceSettings plugin-to-plugin COM-RPC with a mocked hardware abstraction layer
 - **Regression Tests**: Automated testing on each code change
 - **Valgrind Analysis**: Memory leak and error detection
 
@@ -142,7 +142,7 @@ The plugin exposes a comprehensive JSON-RPC 2.0 API with the following method ca
 
 ### Prerequisites
 - WPEFramework (Thunder) R4.4.1 or later
-- RDK Device Settings HAL (dsHAL) available
+- DeviceSettings Thunder plugin available for audio/video capability queries (accessed via COM-RPC)
 - IARM Bus daemon running
 - RFC configuration service (optional, for advanced features)
 
