@@ -40,11 +40,13 @@ The DeviceInfo plugin is a WPEFramework (Thunder) plugin that provides comprehen
             │            │            │
       ┌─────▼────┐  ┌───▼────┐  ┌───▼──────┐
       │   RFC    │  │   DS   │  │  IARM    │
-      │   API    │  │  HAL   │  │   Bus    │
+      │   API    │  │ Plugin │  │   Bus    │
       └──────────┘  └────────┘  └──────────┘
          Config      Device      Inter-Process
          Management  Settings    Communication
 ```
+
+DeviceInfo accesses the DeviceSettings Thunder plugin over COM-RPC via DSHelper, rather than calling the Device Settings HAL directly.
 
 ### Core Components
 
@@ -63,7 +65,7 @@ The DeviceInfo plugin is a WPEFramework (Thunder) plugin that provides comprehen
   - System information (architecture, uptime, memory)
   - Network addresses (Ethernet MAC, STB MAC, WiFi MAC, IP addresses)
   - Supported audio port enumeration
-- **Dependencies**: RFC API (configuration), Device Settings HAL, IARM Bus
+- **Dependencies**: RFC API (configuration), DeviceSettings Thunder plugin via COM-RPC, IARM Bus
 
 #### 3. **DeviceAudioCapabilities**
 - **Responsibility**: Audio hardware capability reporting
@@ -71,7 +73,7 @@ The DeviceInfo plugin is a WPEFramework (Thunder) plugin that provides comprehen
   - Supported audio codecs per port (PCM, AAC, Dolby formats)
   - MS12 audio processing capabilities
   - Supported MS12 audio profiles
-- **Dependencies**: Device Settings HAL (audio subsystem)
+- **Dependencies**: DeviceSettings Thunder plugin via COM-RPC (audio subsystem)
 
 #### 4. **DeviceVideoCapabilities**
 - **Responsibility**: Video hardware capability reporting
@@ -80,14 +82,14 @@ The DeviceInfo plugin is a WPEFramework (Thunder) plugin that provides comprehen
   - Host EDID information
   - Default and supported resolutions per display
   - HDCP version support
-- **Dependencies**: Device Settings HAL (video subsystem)
+- **Dependencies**: DeviceSettings Thunder plugin via COM-RPC (video and host subsystems)
 
 ## Data Flow
 
 ### Initialization Sequence
 1. WPEFramework loads DeviceInfo plugin and calls `Initialize()`
 2. Plugin instantiates implementation objects (DeviceInfoImpl, AudioCapabilities, VideoCapabilities)
-3. Each implementation initializes IARM Bus connection for hardware access
+3. DeviceInfoImplementation initializes the IARM Bus connection; configuration of all three implementations opens DeviceSettings COM-RPC links via DSHelper. DeviceSettings configuration and port handles are loaded lazily on first access.
 4. Plugin registers JSON-RPC methods and interfaces with framework
 5. Plugin becomes available for client requests
 
@@ -108,7 +110,7 @@ DeviceInfo Plugin Interface
 Implementation Layer (DeviceInfoImpl/Audio/Video)
       │
       ├─► RFC API (for configuration data)
-      ├─► Device Settings HAL (for hardware capabilities)
+      ├─► DeviceSettings Thunder plugin via DSHelper/COM-RPC (for hardware capabilities)
       └─► IARM Bus (for system information)
       │
       │ Aggregate Response
@@ -125,10 +127,11 @@ JSON Response to Client
 
 ### RDK Platform Integration
 - **RFC (Remote Feature Control)**: Retrieves device-specific configuration parameters
-- **Device Settings HAL**: Low-level hardware abstraction for audio/video subsystems
+- **DeviceSettings Thunder Plugin**: Provides audio/video configuration and capabilities through COM-RPC interfaces
 - **IARM Bus**: Inter-process communication for system service coordination
 
 ### Helper Utilities
+- **DeviceSettingsInterface.h / DSHelper**: DeviceSettings COM-RPC link management, lazy configuration caching and port handle lookup
 - **UtilsIarm.h**: IARM Bus initialization and connection management
 - **UtilsLogging.h**: Standardized logging macros for debugging and diagnostics
 
@@ -138,18 +141,18 @@ JSON Response to Client
 - **WPEFramework Core**: Plugin framework and COM-RPC infrastructure
 - **entservices-apis**: Interface definitions (IDeviceInfo, IAudioCapabilities, IVideoCapabilities)
 - **RFC Library**: Configuration management
-- **Device Settings Library**: Hardware abstraction layer
+- **entservices-helpers**: DeviceSettings client helper and interface utilities
 - **IARM Bus Library**: Inter-process communication
 
 ### Runtime Dependencies
 - Thunder process must be running
-- Device Settings service (dsHAL) must be available
+- DeviceSettings Thunder plugin must be available for audio/video queries
 - IARM Bus daemon must be active
 
 ## Thread Safety and Concurrency
 - All interface methods are designed to be thread-safe
 - IARM Bus operations use internal locking mechanisms
-- No shared mutable state between concurrent requests
+- DSHelper caches DeviceSettings configuration and port handles; these caches are cleared when DeviceSettings deactivates
 - Plugin lifecycle operations (Initialize/Deinitialize) are serialized by framework
 
 ## Error Handling
