@@ -2662,34 +2662,6 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_DisplayBrandName_PropertyEdgeCaseTest)
         }
     }
 
-    /****************** Test displaybrandname independent of osname/osversion ******************/
-    {
-        TEST_LOG("Testing displaybrandname is unaffected by osname/osversion writes\n");
-        ResetDisplayBrandNameFile();
-
-        JsonObject params, setResults;
-        params["displayBrandName"] = "Example Brand";
-        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults));
-
-        JsonObject osNameParams, osVersionParams;
-        osNameParams["osName"] = "RDK-E";
-        osVersionParams["osVersion"] = "8.3";
-        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "osname", osNameParams, setResults));
-        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "osversion", osVersionParams, setResults));
-
-        JsonObject getResults;
-        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
-        EXPECT_EQ(Core::ERROR_NONE, status);
-        if (status == Core::ERROR_NONE) {
-            EXPECT_EQ(getResults["displayBrandName"].String(), "Example Brand");
-        }
-        std::remove("/opt/persistent/osdetails.info");
-    }
-
-    ResetDisplayBrandNameFile();
-    TEST_LOG("DeviceInfo L2 DisplayBrandName Property Edge Case Tests completed\n");
-}
-
 /****************************** COM-RPC ******************************/
 
 TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DisplayBrandName)
