@@ -657,7 +657,17 @@ namespace Plugin {
     {
 	std::lock_guard<std::mutex> lock(_displayBrandNameMutex);
 	deviceDisplayBrandName.displayBrandName.clear();
-	uint32_t getFileRegexResult = GetFileRegex(DISPLAY_BRAND_NAME_FILE, std::regex("^display_brand_name=([^\n]*)$"), deviceDisplayBrandName.displayBrandName);
+        uint32_t getFileRegexResult = Core::ERROR_GENERAL;
+        std::ifstream file(DISPLAY_BRAND_NAME_FILE);
+        const string prefix = "display_brand_name=";
+        string line;
+        while (std::getline(file, line)) {
+            if (line.compare(0, prefix.size(), prefix) == 0) {
+                deviceDisplayBrandName.displayBrandName = line.substr(prefix.size());
+                getFileRegexResult = Core::ERROR_NONE;
+                break;
+            }
+        }
 	if (getFileRegexResult != Core::ERROR_NONE) {
 		LOGINFO("DisplayBrandName: display_brand_name key not found during read (file missing or key absent).");
 	}
