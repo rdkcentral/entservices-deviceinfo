@@ -22,6 +22,7 @@
 #include "L2Tests.h"
 #include "L2TestsMock.h"
 #include <fstream>
+#include <vector>
 #include "MfrMock.h"
 #include "IarmBusMock.h"
 #include "SystemInfo.h"
@@ -2376,4 +2377,414 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_HardwareID_AllMfrFail_FallsBackToSer
     EXPECT_EQ(Core::ERROR_NONE, rc);
     EXPECT_EQ(hardwareIdInfo.hardwareId, "847250");
     TEST_LOG("HardwareID (all MFR failed, fallback serial prefix): '%s'", hardwareIdInfo.hardwareId.c_str());
+}
+
+// ======================= DisplayBrandName L2 TESTS =======================
+// Style follows DeviceInfo_L2_PropertyTest / DeviceInfo_L2_ErrorHandlingTest /
+// DeviceInfo_L2_PropertyEdgeCaseTest (JSON-RPC) and DeviceInfo_COMRPC_Brand /
+// DeviceInfo_COMRPC_DistributorId (COM-RPC, file-backed values).
+
+#define DISPLAY_BRAND_NAME_FILE     "/opt/persistent/displaybrandname.info"
+#define DISPLAY_BRAND_NAME_TMP_FILE "/opt/persistent/displaybrandname.info.tmp"
+
+static void ResetDisplayBrandNameFile()
+{
+    if (0 != system("mkdir -p /opt/persistent")) { /* do nothing */ }
+    std::remove(DISPLAY_BRAND_NAME_FILE);
+    std::remove(DISPLAY_BRAND_NAME_TMP_FILE);
+}
+
+/****************************** JSON-RPC ******************************/
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_L2_DisplayBrandName_PropertyTest)
+{
+    JSONRPC::LinkType<Core::JSON::IElement> jsonrpc(DEVICEINFO_CALLSIGN, DEVICEINFOL2TEST_CALLSIGN);
+    uint32_t status = Core::ERROR_NONE;
+
+    TEST_LOG("Starting DeviceInfo L2 DisplayBrandName Property Tests\n");
+    ResetDisplayBrandNameFile();
+
+    /****************** displaybrandname get (unset) ******************/
+    {
+        TEST_LOG("Testing displaybrandname get when file is absent\n");
+
+        JsonObject getResults;
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("displayBrandName"));
+            string brand = getResults["displayBrandName"].String();
+            EXPECT_TRUE(brand.empty());
+            TEST_LOG("displayBrandName (unset): '%s'", brand.c_str());
+        }
+    }
+
+    /****************** displaybrandname set + get ******************/
+    {
+        TEST_LOG("Testing displaybrandname set then get\n");
+
+        JsonObject params, setResults;
+        params["displayBrandName"] = "Example Brand";
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+
+        JsonObject getResults;
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("displayBrandName"));
+            string brand = getResults["displayBrandName"].String();
+            EXPECT_EQ(brand, "Example Brand");
+            TEST_LOG("displayBrandName: %s", brand.c_str());
+        }
+
+        std::ifstream file(DISPLAY_BRAND_NAME_FILE);
+        ASSERT_TRUE(file.is_open());
+        string line;
+        std::getline(file, line);
+        EXPECT_EQ(line, "display_brand_name=Example Brand");
+
+        std::ifstream tmpFile(DISPLAY_BRAND_NAME_TMP_FILE);
+        EXPECT_FALSE(tmpFile.is_open());
+    }
+
+    /****************** displaybrandname overwrite ******************/
+    {
+        TEST_LOG("Testing displaybrandname overwrite (last write wins)\n");
+
+        JsonObject params, setResults;
+        params["displayBrandName"] = "First Brand";
+        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults));
+        params["displayBrandName"] = "Second Brand";
+        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults));
+
+        JsonObject getResults;
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_EQ(getResults["displayBrandName"].String(), "Second Brand");
+        }
+    }
+
+    /****************** displaybrandname set empty ******************/
+    {
+        TEST_LOG("Testing displaybrandname set to empty string\n");
+
+        JsonObject params, setResults;
+        params["displayBrandName"] = "";
+        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults));
+
+        JsonObject getResults;
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("displayBrandName"));
+            EXPECT_TRUE(getResults["displayBrandName"].String().empty());
+        }
+    }
+
+    ResetDisplayBrandNameFile();
+    TEST_LOG("DeviceInfo L2 DisplayBrandName Property Tests completed\n");
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_L2_DisplayBrandName_ErrorHandlingTest)
+{
+    JSONRPC::LinkType<Core::JSON::IElement> jsonrpc(DEVICEINFO_CALLSIGN, DEVICEINFOL2TEST_CALLSIGN);
+    uint32_t status = Core::ERROR_NONE;
+
+    TEST_LOG("Starting DeviceInfo L2 DisplayBrandName Error Handling Tests\n");
+    ResetDisplayBrandNameFile();
+
+    /****************** Test displaybrandname with embedded newline ******************/
+    {
+        // Newline would corrupt the key=value file format -> ERROR_BAD_REQUEST, previous value kept.
+        TEST_LOG("Testing displaybrandname set with embedded newline\n");
+
+        JsonObject params, setResults;
+        params["displayBrandName"] = "Example Brand";
+        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults));
+
+        params["displayBrandName"] = "First\nSecond";
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults);
+        EXPECT_EQ(Core::ERROR_BAD_REQUEST, status);
+
+        JsonObject getResults;
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_EQ(getResults["displayBrandName"].String(), "Example Brand");
+        }
+    }
+
+    /****************** Test displaybrandname with trailing newline ******************/
+    {
+        TEST_LOG("Testing displaybrandname set with trailing newline\n");
+
+        JsonObject params, setResults;
+        params["displayBrandName"] = "Trailing\n";
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults);
+        EXPECT_EQ(Core::ERROR_BAD_REQUEST, status);
+    }
+
+    /****************** Test displaybrandname when persistent dir is not writable ******************/
+    {
+        // Replace the tmp-file path with a directory so std::ofstream cannot open it -> ERROR_GENERAL.
+        TEST_LOG("Testing displaybrandname set when tmp file cannot be created\n");
+
+        if (0 != system("mkdir -p " DISPLAY_BRAND_NAME_TMP_FILE)) { /* do nothing */ }
+
+        JsonObject params, setResults;
+        params["displayBrandName"] = "Unwritable Brand";
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults);
+        EXPECT_EQ(Core::ERROR_GENERAL, status);
+
+        if (0 != system("rmdir " DISPLAY_BRAND_NAME_TMP_FILE)) { /* do nothing */ }
+
+        JsonObject getResults;
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_EQ(getResults["displayBrandName"].String(), "Example Brand");
+        }
+    }
+
+    ResetDisplayBrandNameFile();
+    TEST_LOG("DeviceInfo L2 DisplayBrandName Error Handling Tests completed\n");
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_L2_DisplayBrandName_PropertyEdgeCaseTest)
+{
+    JSONRPC::LinkType<Core::JSON::IElement> jsonrpc(DEVICEINFO_CALLSIGN, DEVICEINFOL2TEST_CALLSIGN);
+    uint32_t status = Core::ERROR_NONE;
+
+    TEST_LOG("Starting DeviceInfo L2 DisplayBrandName Property Edge Case Tests\n");
+
+    /****************** Test displaybrandname with special characters ******************/
+    {
+        TEST_LOG("Testing displaybrandname with special characters\n");
+
+        const std::vector<string> values = {
+            "Brand=With=Equals",
+            "Brand \"Quoted\" & <Tagged>",
+            "Brand\twith\ttabs",
+            "\xC3\x9Cn\xC3\xAFc\xC3\xB6" "d\xC3\xA9 Brand",
+            "   padded   "
+        };
+
+        for (const auto& value : values) {
+            ResetDisplayBrandNameFile();
+
+            JsonObject params, setResults;
+            params["displayBrandName"] = value;
+            EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults));
+
+            JsonObject getResults;
+            status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+            EXPECT_EQ(Core::ERROR_NONE, status);
+            if (status == Core::ERROR_NONE) {
+                EXPECT_EQ(getResults["displayBrandName"].String(), value);
+                TEST_LOG("displayBrandName round-trip: '%s'", value.c_str());
+            }
+        }
+    }
+
+    /****************** Test displaybrandname with long value ******************/
+    {
+        TEST_LOG("Testing displaybrandname with 512-char value\n");
+        ResetDisplayBrandNameFile();
+
+        const string longName(512, 'B');
+        JsonObject params, setResults;
+        params["displayBrandName"] = longName;
+        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults));
+
+        JsonObject getResults;
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_EQ(getResults["displayBrandName"].String(), longName);
+        }
+    }
+
+    /****************** Test displaybrandname with preloaded file (extra lines) ******************/
+    {
+        // Same approach as firmwareversion edge cases: seed the backing file directly.
+        TEST_LOG("Testing displaybrandname with pre-populated file\n");
+        ResetDisplayBrandNameFile();
+
+        std::ofstream file(DISPLAY_BRAND_NAME_FILE);
+        file << "# comment line\n";
+        file << "display_brand_name=Preloaded Brand\n";
+        file << "display_brand_name=Ignored Second Entry\n";
+        file.close();
+
+        JsonObject getResults;
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_EQ(getResults["displayBrandName"].String(), "Preloaded Brand");
+        }
+    }
+
+    /****************** Test displaybrandname with file missing key ******************/
+    {
+        TEST_LOG("Testing displaybrandname with file lacking display_brand_name key\n");
+        ResetDisplayBrandNameFile();
+
+        std::ofstream file(DISPLAY_BRAND_NAME_FILE);
+        file << "some_other_key=value\n";
+        file.close();
+
+        JsonObject getResults;
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults.HasLabel("displayBrandName"));
+            EXPECT_TRUE(getResults["displayBrandName"].String().empty());
+        }
+    }
+
+    /****************** Test displaybrandname after file removed (factory reset) ******************/
+    {
+        TEST_LOG("Testing displaybrandname after backing file is removed\n");
+        ResetDisplayBrandNameFile();
+
+        JsonObject params, setResults;
+        params["displayBrandName"] = "Example Brand";
+        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults));
+        EXPECT_EQ(0, std::remove(DISPLAY_BRAND_NAME_FILE));
+
+        JsonObject getResults;
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_TRUE(getResults["displayBrandName"].String().empty());
+        }
+    }
+
+    /****************** Test displaybrandname independent of osname/osversion ******************/
+    {
+        TEST_LOG("Testing displaybrandname is unaffected by osname/osversion writes\n");
+        ResetDisplayBrandNameFile();
+
+        JsonObject params, setResults;
+        params["displayBrandName"] = "Example Brand";
+        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults));
+
+        JsonObject osNameParams, osVersionParams;
+        osNameParams["osName"] = "RDK-E";
+        osVersionParams["osVersion"] = "8.3";
+        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "osname", osNameParams, setResults));
+        EXPECT_EQ(Core::ERROR_NONE, InvokeServiceMethod(DEVICEINFO_CALLSIGN, "osversion", osVersionParams, setResults));
+
+        JsonObject getResults;
+        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+        EXPECT_EQ(Core::ERROR_NONE, status);
+        if (status == Core::ERROR_NONE) {
+            EXPECT_EQ(getResults["displayBrandName"].String(), "Example Brand");
+        }
+        std::remove("/opt/persistent/osdetails.info");
+    }
+
+    ResetDisplayBrandNameFile();
+    TEST_LOG("DeviceInfo L2 DisplayBrandName Property Edge Case Tests completed\n");
+}
+
+/****************************** COM-RPC ******************************/
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DisplayBrandName)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+    ResetDisplayBrandNameFile();
+
+    std::ofstream file(DISPLAY_BRAND_NAME_FILE);
+    file << "display_brand_name=TestDisplayBrand\n";
+    file.close();
+
+    Exchange::IDeviceInfo::DeviceDisplayBrandName displayBrandName;
+    Core::hresult rc = m_deviceinfoplugin->DisplayBrandName(displayBrandName);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_FALSE(displayBrandName.displayBrandName.empty());
+    EXPECT_EQ(displayBrandName.displayBrandName, "TestDisplayBrand");
+
+    ResetDisplayBrandNameFile();
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DisplayBrandName_Unset_ReturnsEmpty)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+    ResetDisplayBrandNameFile();
+
+    Exchange::IDeviceInfo::DeviceDisplayBrandName displayBrandName;
+    displayBrandName.displayBrandName = "stale";
+    Core::hresult rc = m_deviceinfoplugin->DisplayBrandName(displayBrandName);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_TRUE(displayBrandName.displayBrandName.empty());
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DisplayBrandName_SetThenGet)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+    ResetDisplayBrandNameFile();
+
+    Core::hresult rc = m_deviceinfoplugin->DisplayBrandName(string("Example Brand"));
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+
+    Exchange::IDeviceInfo::DeviceDisplayBrandName displayBrandName;
+    rc = m_deviceinfoplugin->DisplayBrandName(displayBrandName);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(displayBrandName.displayBrandName, "Example Brand");
+    TEST_LOG("DisplayBrandName (COM-RPC): %s", displayBrandName.displayBrandName.c_str());
+
+    ResetDisplayBrandNameFile();
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DisplayBrandName_Newline_ReturnsBadRequest)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+    ResetDisplayBrandNameFile();
+
+    EXPECT_EQ(Core::ERROR_NONE, m_deviceinfoplugin->DisplayBrandName(string("Example Brand")));
+    EXPECT_EQ(Core::ERROR_BAD_REQUEST, m_deviceinfoplugin->DisplayBrandName(string("First\nSecond")));
+
+    Exchange::IDeviceInfo::DeviceDisplayBrandName displayBrandName;
+    EXPECT_EQ(Core::ERROR_NONE, m_deviceinfoplugin->DisplayBrandName(displayBrandName));
+    EXPECT_EQ(displayBrandName.displayBrandName, "Example Brand");
+
+    ResetDisplayBrandNameFile();
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DisplayBrandName_PersistsAcrossReconnect)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+    ResetDisplayBrandNameFile();
+
+    EXPECT_EQ(Core::ERROR_NONE, m_deviceinfoplugin->DisplayBrandName(string("Persisted Brand")));
+
+    TearDown();
+    SetUp();
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+
+    Exchange::IDeviceInfo::DeviceDisplayBrandName displayBrandName;
+    EXPECT_EQ(Core::ERROR_NONE, m_deviceinfoplugin->DisplayBrandName(displayBrandName));
+    EXPECT_EQ(displayBrandName.displayBrandName, "Persisted Brand");
+
+    ResetDisplayBrandNameFile();
+}
+
+TEST_F(DeviceInfo_L2test, DeviceInfo_COMRPC_DisplayBrandName_SetViaComRpc_GetViaJsonRpc)
+{
+    ASSERT_TRUE(m_deviceinfoplugin != nullptr);
+    ResetDisplayBrandNameFile();
+
+    EXPECT_EQ(Core::ERROR_NONE, m_deviceinfoplugin->DisplayBrandName(string("Cross Channel Brand")));
+
+    JsonObject getResults;
+    uint32_t status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
+    EXPECT_EQ(Core::ERROR_NONE, status);
+    if (status == Core::ERROR_NONE) {
+        EXPECT_EQ(getResults["displayBrandName"].String(), "Cross Channel Brand");
+    }
+
+    ResetDisplayBrandNameFile();
 }
