@@ -101,6 +101,7 @@ protected:
         // and forking while a worker thread is mid-activation races with it.
         if (0 != system("mkdir -p /opt/www/authService")) { /* do nothing */ }
         std::remove("/opt/persistent/osdetails.info");
+	std::remove("/opt/persistent/displaybrandname.info");
 
         p_iarmBusImplMock = new NiceMock<IarmBusImplMock>;
         IarmBus::setImpl(p_iarmBusImplMock);
@@ -2093,4 +2094,89 @@ TEST_F(DeviceInfoTest, OsNameAndVersion_WriteVersionOnly_NameUnaffected)
     response.clear();
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("osname"), _T(""), response));
     EXPECT_EQ(response, _T("{\"osName\":\"RDKLinux\"}"));
+}
+
+TEST_F(DeviceInfoTest, DisplayBrandName_Read_WhenNoFileExists_ReturnsEmpty)
+{
+  EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T(""), response));
+  EXPECT_EQ(response, _T("{\"displayBrandName\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, DisplayBrandName_Write_ThenRead_ReturnsSameValue)
+{
+    ASSERT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T("{\"displayBrandName\":\"Example Brand\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"displayBrandName\":\"Example Brand\"}"));
+
+    std::ifstream file("/opt/persistent/displaybrandname.info");
+    ASSERT_TRUE(file.is_open());
+    string line;
+    ASSERT_TRUE(static_cast<bool>(std::getline(file, line)));
+    EXPECT_EQ(line, "display_brand_name=Example Brand");
+}
+
+TEST_F(DeviceInfoTest, DisplayBrandName_WriteMultipleTimes_LastWriteWins)
+{
+    ASSERT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T("{\"displayBrandName\":\"First Brand\"}"), response));
+    response.clear();
+    ASSERT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T("{\"displayBrandName\":\"Second Brand\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"displayBrandName\":\"Second Brand\"}"));
+}
+
+TEST_F(DeviceInfoTest, DisplayBrandName_WriteEmptyString_OverwritesPreviousValue)
+{
+    ASSERT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T("{\"displayBrandName\":\"Example Brand\"}"), response));
+    response.clear();
+    ASSERT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T("{\"displayBrandName\":\"\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"displayBrandName\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, DisplayBrandName_WriteLongString_ReadBackCorrectly)
+{
+    const string longName(512, 'B');
+    const string payload = _T("{\"displayBrandName\":\"") + longName + _T("\"}");
+    ASSERT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), payload, response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T(""), response));
+    EXPECT_EQ(response, payload);
+}
+
+TEST_F(DeviceInfoTest, DisplayBrandName_NewImplementation_ReadsPersistedValue)
+{
+    ASSERT_EQ(Core::ERROR_NONE, deviceInfoImplementation->DisplayBrandName(string("Example Brand")));
+
+    Core::ProxyType<Plugin::DeviceInfoImplementation> newImplementation =
+        Core::ProxyType<Plugin::DeviceInfoImplementation>::Create();
+    Exchange::IDeviceInfo::DeviceDisplayBrandName value;
+    const Plugin::DeviceInfoImplementation* constImpl = &(*newImplementation);
+    EXPECT_EQ(Core::ERROR_NONE, constImpl->DisplayBrandName(value));
+    EXPECT_EQ(value.displayBrandName, "Example Brand");
+}
+
+TEST_F(DeviceInfoTest, DisplayBrandName_PersistentFileRemoved_ReturnsEmpty)
+{
+    ASSERT_EQ(Core::ERROR_NONE, deviceInfoImplementation->DisplayBrandName(string("Example Brand")));
+    ASSERT_EQ(0, std::remove("/opt/persistent/displaybrandname.info"));
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"displayBrandName\":\"\"}"));
+}
+
+TEST_F(DeviceInfoTest, DisplayBrandName_NewlineRejected_PreservesPreviousValue)
+{
+    ASSERT_EQ(Core::ERROR_NONE, deviceInfoImplementation->DisplayBrandName(string("Example Brand")));
+    EXPECT_EQ(Core::ERROR_BAD_REQUEST, handler.Invoke(connection, _T("displaybrandname"), _T("{\"displayBrandName\":\"First\\nSecond\"}"), response));
+
+    response.clear();
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("displaybrandname"), _T(""), response));
+    EXPECT_EQ(response, _T("{\"displayBrandName\":\"Example Brand\"}"));
 }

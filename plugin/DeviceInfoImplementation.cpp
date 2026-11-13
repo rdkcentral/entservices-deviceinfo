@@ -35,6 +35,8 @@
 
 #define OS_DETAILS_FILE "/opt/persistent/osdetails.info"
 #define OS_DETAILS_TMP_FILE "/opt/persistent/osdetails.info.tmp"
+#define DISPLAY_BRAND_NAME_FILE "/opt/persistent/displaybrandname.info"
+#define DISPLAY_BRAND_NAME_TMP_FILE "/opt/persistent/displaybrandname.info.tmp"
 
 namespace WPEFramework {
 namespace Plugin {
@@ -114,6 +116,32 @@ namespace Plugin {
             }
             return Core::ERROR_NONE;
         }
+
+	uint32_t WriteDisplayBrandName(const string& displayBrandName)
+        {
+	   std::ofstream tmp(DISPLAY_BRAND_NAME_TMP_FILE);
+	   if (!tmp.is_open()) {
+		LOGERR("Failed to open displaybrandname tmp file for writing");
+		return Core::ERROR_GENERAL;
+            }
+	   tmp << "display_brand_name=" << displayBrandName << '\n';
+           tmp.close();
+	   if (tmp.fail()) {
+		LOGERR("Failed to write displaybrandname tmp file");
+		if (std::remove(DISPLAY_BRAND_NAME_TMP_FILE) != 0) {
+			LOGERR("Failed to remove displaybrandname tmp file");
+		}
+		return Core::ERROR_GENERAL;
+	    }
+	    if (std::rename(DISPLAY_BRAND_NAME_TMP_FILE, DISPLAY_BRAND_NAME_FILE) != 0) {
+		LOGERR("Failed to atomically write displaybrandname.info");
+		if (std::remove(DISPLAY_BRAND_NAME_TMP_FILE) != 0) {
+			LOGERR("Failed to remove displaybrandname tmp file");
+		}
+		return Core::ERROR_GENERAL;
+	}
+	return Core::ERROR_NONE;
+     }
 
     }
 
@@ -624,5 +652,36 @@ namespace Plugin {
         }
         return WriteOsDetails(curName, osVersion);
     }
+
+    Core::hresult DeviceInfoImplementation::DisplayBrandName(DeviceDisplayBrandName& deviceDisplayBrandName) const
+    {
+	std::lock_guard<std::mutex> lock(_displayBrandNameMutex);
+	deviceDisplayBrandName.displayBrandName.clear();
+        uint32_t getFileRegexResult = Core::ERROR_GENERAL;
+        std::ifstream file(DISPLAY_BRAND_NAME_FILE);
+        const string prefix = "display_brand_name=";
+        string line;
+        while (std::getline(file, line)) {
+            if (line.compare(0, prefix.size(), prefix) == 0) {
+                deviceDisplayBrandName.displayBrandName = line.substr(prefix.size());
+                getFileRegexResult = Core::ERROR_NONE;
+                break;
+            }
+        }
+	if (getFileRegexResult != Core::ERROR_NONE) {
+		LOGINFO("DisplayBrandName: display_brand_name key not found during read (file missing or key absent).");
+	}
+	return Core::ERROR_NONE;
+    }
+
+     Core::hresult DeviceInfoImplementation::DisplayBrandName(const string &displayBrandName)
+     {
+	std::lock_guard<std::mutex> lock(_displayBrandNameMutex);
+	if (displayBrandName.find('\n') != string::npos) {
+		LOGERR("DisplayBrandName: value must not contain a newline");
+		return Core::ERROR_BAD_REQUEST;
+	}
+	return WriteDisplayBrandName(displayBrandName);
+     }
 }
 }
