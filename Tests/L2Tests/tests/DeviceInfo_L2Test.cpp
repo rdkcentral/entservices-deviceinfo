@@ -2661,6 +2661,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_DisplayBrandName_PropertyEdgeCaseTest)
             EXPECT_TRUE(getResults["displayBrandName"].String().empty());
         }
     }
+}
 
 /****************************** COM-RPC ******************************/
 
