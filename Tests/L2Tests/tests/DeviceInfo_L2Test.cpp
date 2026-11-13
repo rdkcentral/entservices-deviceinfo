@@ -2567,7 +2567,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_DisplayBrandName_PropertyEdgeCaseTest)
             "Brand=With=Equals",
             "Brand \"Quoted\" & <Tagged>",
             "Brand\twith\ttabs",
-            "\xC3\x9Cn\xC3\xAFc\xC3\xB6" "d\xC3\xA9 Brand",
+            "\xC3\x9Cn\xC3\xAF" "c\xC3\xB6" "d\xC3\xA9 Brand",
             "   padded   "
         };
 
