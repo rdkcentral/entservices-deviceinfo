@@ -27,6 +27,11 @@
 #include "IarmBusMock.h"
 #include "SystemInfo.h"
 #include <interfaces/IDeviceInfo.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -2526,30 +2531,98 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_DisplayBrandName_ErrorHandlingTest)
         EXPECT_NE(Core::ERROR_NONE, status);
     }
 
-    /****************** Test displaybrandname when persistent dir is not writable ******************/
-    {
-        // Replace the tmp-file path with a directory so std::ofstream cannot open it -> ERROR_GENERAL.
-        TEST_LOG("Testing displaybrandname set when tmp file cannot be created\n");
+     struct DirectoryCleanup {
+        const char* path;
 
-        if (0 != system("mkdir -p " DISPLAY_BRAND_NAME_TMP_FILE)) { /* do nothing */ }
+        ~DirectoryCleanup()
+        {
+            EXPECT_EQ(0, ::rmdir(path))
+                << "Failed to remove directory " << path
+                << ": " << std::strerror(errno);
+        }
+    };
+    /****************** Temporary-file path is a directory ******************/
+  {
+    TEST_LOG("Testing displaybrandname when temporary-file path is a directory\n");
+
+    {
+        ASSERT_EQ(0, ::mkdir(DISPLAY_BRAND_NAME_TMP_FILE, 0700))
+            << "Failed to create temporary-path directory: "
+            << std::strerror(errno);
+        DirectoryCleanup cleanup { DISPLAY_BRAND_NAME_TMP_FILE };
 
         JsonObject params, setResults;
-        params["displayBrandName"] = "Unwritable Brand";
-        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults);
+        params["displayBrandName"] = "Blocked Brand";
+
+        status = InvokeServiceMethod(
+            DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults);
         EXPECT_EQ(Core::ERROR_GENERAL, status);
 
-        if (0 != system("rmdir " DISPLAY_BRAND_NAME_TMP_FILE)) { /* do nothing */ }
-
+        // Opening the temporary file failed; the previous value must survive.
         JsonObject getResults;
-        status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
-        EXPECT_EQ(Core::ERROR_NONE, status);
-        if (status == Core::ERROR_NONE) {
-            EXPECT_EQ(getResults["displayBrandName"].String(), "Example Brand");
-        }
+        ASSERT_EQ(Core::ERROR_NONE,
+            InvokeServiceMethod(
+                DEVICEINFO_CALLSIGN, "displaybrandname", getResults));
+
+        ASSERT_TRUE(getResults.HasLabel("displayBrandName"));
+        EXPECT_EQ("Example Brand", getResults["displayBrandName"].String());
+    }
+}
+
+/****************** Destination-file path is a directory ******************/
+{
+    TEST_LOG("Testing displaybrandname when destination-file path is a directory\n");
+
+    // Remove the regular file seeded earlier in this test.
+    ASSERT_EQ(0, std::remove(DISPLAY_BRAND_NAME_FILE))
+        << "Failed to remove test file: " << std::strerror(errno);
+
+    {
+        ASSERT_EQ(0, ::mkdir(DISPLAY_BRAND_NAME_FILE, 0700))
+            << "Failed to create destination-path directory: "
+            << std::strerror(errno);
+        DirectoryCleanup cleanup { DISPLAY_BRAND_NAME_FILE };
+
+        JsonObject params, setResults;
+        params["displayBrandName"] = "Blocked Brand";
+
+        status = InvokeServiceMethod(
+            DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults);
+        EXPECT_EQ(Core::ERROR_GENERAL, status);
+
+        // A failed rename must leave the destination directory intact.
+        struct stat fileInfo {};
+        ASSERT_EQ(0, ::lstat(DISPLAY_BRAND_NAME_FILE, &fileInfo))
+            << "Failed to inspect destination: " << std::strerror(errno);
+        EXPECT_TRUE(S_ISDIR(fileInfo.st_mode));
+
+        // The failed rename must not leave a temporary file behind.
+        errno = 0;
+        const int tmpStatus = ::lstat(DISPLAY_BRAND_NAME_TMP_FILE, &fileInfo);
+        const int tmpError = errno;
+        EXPECT_EQ(-1, tmpStatus);
+        EXPECT_EQ(ENOENT, tmpError);
     }
 
-    ResetDisplayBrandNameFile();
-    TEST_LOG("DeviceInfo L2 DisplayBrandName Error Handling Tests completed\n");
+    // Verify successful set/get after removing the obstruction.
+    JsonObject params, setResults;
+    params["displayBrandName"] = "Recovered Brand";
+
+    ASSERT_EQ(Core::ERROR_NONE,
+        InvokeServiceMethod(
+            DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults));
+
+    JsonObject getResults;
+    ASSERT_EQ(Core::ERROR_NONE,
+        InvokeServiceMethod(
+            DEVICEINFO_CALLSIGN, "displaybrandname", getResults));
+
+    ASSERT_TRUE(getResults.HasLabel("displayBrandName"));
+    EXPECT_EQ("Recovered Brand", getResults["displayBrandName"].String());
+}
+
+ResetDisplayBrandNameFile();
+TEST_LOG("DeviceInfo L2 DisplayBrandName Error Handling Tests completed\n");
 }
 
 TEST_F(DeviceInfo_L2test, DeviceInfo_L2_DisplayBrandName_PropertyEdgeCaseTest)
