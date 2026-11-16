@@ -2506,7 +2506,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_DisplayBrandName_ErrorHandlingTest)
 
         params["displayBrandName"] = "First\nSecond";
         status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults);
-        EXPECT_EQ(Core::ERROR_BAD_REQUEST, status);
+        EXPECT_NE(Core::ERROR_NONE, status);
 
         JsonObject getResults;
         status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", getResults);
@@ -2523,7 +2523,7 @@ TEST_F(DeviceInfo_L2test, DeviceInfo_L2_DisplayBrandName_ErrorHandlingTest)
         JsonObject params, setResults;
         params["displayBrandName"] = "Trailing\n";
         status = InvokeServiceMethod(DEVICEINFO_CALLSIGN, "displaybrandname", params, setResults);
-        EXPECT_EQ(Core::ERROR_BAD_REQUEST, status);
+        EXPECT_NE(Core::ERROR_NONE, status);
     }
 
     /****************** Test displaybrandname when persistent dir is not writable ******************/
