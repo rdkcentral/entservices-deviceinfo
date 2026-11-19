@@ -77,7 +77,7 @@ namespace Plugin {
         Core::hresult OsName(const string &osName) override;
         Core::hresult OsVersion(DeviceOsVersion& deviceOsVersion) const override;
         Core::hresult OsVersion(const string &osVersion) override;
-	Core::hresult DisplayBrandName(DeviceDisplayBrandName& deviceDisplayBrandName) const override;
+	    Core::hresult DisplayBrandName(DeviceDisplayBrandName& deviceDisplayBrandName) const override;
         Core::hresult DisplayBrandName(const string &displayBrandName) override;
 
         // IConfiguration interface
@@ -90,7 +90,7 @@ namespace Plugin {
         mutable string _cachedDeviceID;
         mutable bool _deviceIDCached { false };
         mutable std::mutex _osPropertiesMutex;
-	mutable std::mutex _displayBrandNameMutex;
+	    mutable std::mutex _displayBrandNameMutex;
 
     protected:
         // DSHelper lifecycle callbacks.
