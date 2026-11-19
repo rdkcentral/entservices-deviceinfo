@@ -101,7 +101,7 @@ protected:
         // and forking while a worker thread is mid-activation races with it.
         if (0 != system("mkdir -p /opt/www/authService")) { /* do nothing */ }
         std::remove("/opt/persistent/osdetails.info");
-	std::remove("/opt/persistent/displaybrandname.info");
+	    std::remove("/opt/persistent/displaybrandname.info");
 
         p_iarmBusImplMock = new NiceMock<IarmBusImplMock>;
         IarmBus::setImpl(p_iarmBusImplMock);

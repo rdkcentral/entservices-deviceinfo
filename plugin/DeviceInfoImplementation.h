@@ -90,7 +90,7 @@ namespace Plugin {
         mutable string _cachedDeviceID;
         mutable bool _deviceIDCached { false };
         mutable std::mutex _osPropertiesMutex;
-	mutable std::mutex _displayBrandNameMutex;
+	    mutable std::mutex _displayBrandNameMutex;
 
     protected:
         // DSHelper lifecycle callbacks.
