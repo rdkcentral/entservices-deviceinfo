@@ -68,6 +68,7 @@ The plugin exposes a comprehensive JSON-RPC 2.0 API with the following method ca
 - `firmwareversion` / `releaseversion` - Software version information
 - `chipset` / `socname` - Hardware platform details
 - `devicetype` / `brand` / `distributorid` - Device classification
+- `displaybrandname` - Get or set the device display brand name (single line); persists in `/opt/persistent/displaybrandname.info`, returns an empty string if unset, and is cleared by factory reset
 
 #### Audio Capability Methods
 - `audiocapabilities` - Query supported codecs for a specific audio port
