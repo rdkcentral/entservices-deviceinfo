@@ -17,6 +17,7 @@
 * limitations under the License.
 **/
 
+
 #include "DeviceInfoImplementation.h"
 
 #include "rfcapi.h"
@@ -37,6 +38,7 @@
 #define OS_DETAILS_TMP_FILE "/opt/persistent/osdetails.info.tmp"
 #define DISPLAY_BRAND_NAME_FILE "/opt/persistent/displaybrandname.info"
 #define DISPLAY_BRAND_NAME_TMP_FILE "/opt/persistent/displaybrandname.info.tmp"
+
 
 namespace WPEFramework {
 namespace Plugin {
